@@ -2,14 +2,14 @@ using Pkg
 Pkg.activate(@__DIR__)
 using CSV, DataFrames, Plots, Statistics
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# Paths
 const RUN_DIR      = joinpath(@__DIR__, "data", "tutorial-9", "results", "5-seeded run")
 const OUT_MAIN     = joinpath(RUN_DIR, "publication_plots_5seed", "main")
 const OUT_APPENDIX = joinpath(RUN_DIR, "publication_plots_5seed", "appendix")
 mkpath(OUT_MAIN)
 mkpath(OUT_APPENDIX)
 
-# ── Method catalogue ───────────────────────────────────────────────────────────
+
 const METHODS = [
     (id=:k_medoids,              label="k-Medoids",           color=:black,        stroke=:solid,   marker=:circle,    lw=2.0, ms=4.5),
     (id=:k_medoids_wc_unit,      label="WC unit weight",      color=:royalblue,    stroke=:dash,    marker=:square,    lw=2.0, ms=4.5),
@@ -19,20 +19,20 @@ const METHODS = [
     (id=:k_medoids_rwc_ens,      label="ENS-Guided",          color=:seagreen,     stroke=:dashdot, marker=:star5,     lw=2.0, ms=4.5),
 ]
 
-# The two baselines that appear in every contributed-method comparison plot
+
 const BASELINES  = [:k_medoids, :k_medoids_wc_unit]
 
-# The three contributed real worst-case methods with their short names (used in filenames)
+
 const REAL_METHODS = [
     (:k_medoids_rwc_netload,  "netload"),
     (:k_medoids_rwc_elgersma, "elgersma"),
     (:k_medoids_rwc_ens,      "ens"),
 ]
 
-# For the fractional-weight group (3 lines: both baselines + wc_frac)
+
 const FRAC_GROUP = [:k_medoids, :k_medoids_wc_unit, :k_medoids_wc_frac]
 
-# ── Data loading ───────────────────────────────────────────────────────────────
+# Data loading
 function load_all()
     d = Dict{Symbol, DataFrame}()
     for m in METHODS
@@ -53,14 +53,14 @@ end
 const DATA  = load_all()
 const BENCH = load_bench()
 
-# ── Shared theme ───────────────────────────────────────────────────────────────
+# Shared theme
 const FA = (
     titlefontsize=11, guidefontsize=10, tickfontsize=9,
     legendfontsize=8, grid=true, gridalpha=0.12, gridstyle=:dot,
     frame=:box, tickdirection=:out, dpi=300,
 )
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# Helpers
 function inv_dev_vec(df)
     BENCH === nothing && return Float64.(df.investment)
     [(isfinite(v) ? (v - BENCH.inv)/BENCH.inv*100.0 : NaN) for v in df.investment]
@@ -92,7 +92,7 @@ function method_by_id(id)
     METHODS[i]
 end
 
-# ── Core: plot one group of IDs for a given metric and k-range ────────────────
+# Plotting
 function make_plot(ids, ycol::Symbol, title_str, ylabel_str, lo, hi;
                    legend_pos=:topright,
                    ref_hlines=[],
@@ -129,17 +129,11 @@ function make_plot(ids, ycol::Symbol, title_str, ylabel_str, lo, hi;
     return p
 end
 
-# ════════════════════════════════════════════════════════════════════════════════
-# MAIN PAPER PLOTS
-# Each real worst-case method plotted against its two baselines only (3 lines).
-# ════════════════════════════════════════════════════════════════════════════════
 
-println("=== Generating main plots ===")
 
-# ── Regret: per-method, two zoom ranges ───────────────────────────────────────
-# Produces 6 files:
-#   netload_regret_mid.png   elgersma_regret_mid.png   ens_regret_mid.png
-#   netload_regret_late.png  elgersma_regret_late.png  ens_regret_late.png
+println("Generating main plots")
+
+# Real methods plots
 for (rid, rname) in REAL_METHODS
     ids = vcat(BASELINES, [rid])
 
@@ -158,7 +152,7 @@ for (rid, rname) in REAL_METHODS
     println("Saved: $(rname)_regret_late.png")
 end
 
-# ── Fractional-weight failure: regret and investment (already 3 lines) ────────
+# Fractional plots
 p_frac_r = make_plot(FRAC_GROUP, :regret,
     "Regret (%) — WC frac. weight vs baselines (k 50-1002)",
     "Regret [%]", 50, 1002;
@@ -175,9 +169,7 @@ p_frac_i = make_plot(FRAC_GROUP, :inv_dev,
 save_main(p_frac_i, "wc_frac_inv")
 println("Saved: wc_frac_inv.png")
 
-# ── LOLE: per-method, medium/high k ───────────────────────────────────────────
-# Produces 3 files:
-#   netload_lole_late.png   elgersma_lole_late.png   ens_lole_late.png
+# LOLE plots
 lole_refs = BENCH === nothing ? [] :
     [(BENCH.lole, "Full-res ($(Int(BENCH.lole)) h/yr)", :black, :dash)]
 
@@ -193,7 +185,7 @@ for (rid, rname) in REAL_METHODS
     println("Saved: $(rname)_lole_late.png")
 end
 
-# ── ENS-Guided regret vs baselines (already 3 lines, k=50-402) ───────────────
+
 p_ens_r = make_plot([:k_medoids, :k_medoids_wc_unit, :k_medoids_rwc_ens],
     :regret,
     "Regret (%) — ENS-Guided vs baselines (k 50-402)",
@@ -202,7 +194,7 @@ p_ens_r = make_plot([:k_medoids, :k_medoids_wc_unit, :k_medoids_rwc_ens],
 save_main(p_ens_r, "ens_regret_zoom")
 println("Saved: ens_regret_zoom.png")
 
-# ── Solve time: all 6 methods (time plot, 6 lines is fine here) ───────────────
+# Time plots
 begin
     p = plot(; title="Solve time per k-value — all methods",
                xlabel="k", ylabel="Time [s]",
@@ -221,13 +213,11 @@ begin
     println("Saved: time_all.png")
 end
 
-println("\n=== Main plots done ($(length(readdir(OUT_MAIN)))) ===\n")
+println("\nMain plots done ($(length(readdir(OUT_MAIN))))\n")
 
-# ════════════════════════════════════════════════════════════════════════════════
-# APPENDIX PLOTS — full range + zooms, 3 lines per plot (method + 2 baselines)
-# ════════════════════════════════════════════════════════════════════════════════
+# Appendix plots
 
-println("=== Generating appendix plots ===")
+println("Generating appendix plots")
 
 const APP_R_EARLY = (2,   50)
 const APP_R_LATE  = (50,  252)
@@ -243,7 +233,6 @@ lole_refs_full = BENCH === nothing ? [] : [
 ]
 
 function build_appendix_group(ids, group_name)
-    # ── regret ────────────────────────────────────────────────────────────────
     p_rf = make_plot(ids, :regret,
         "Regret (%) — $(group_name) (full range)", "Regret [%]", 2, 1095;
         ref_hlines=[(0.0, false, :gray, :dash)], smart_pct=0.95)
@@ -259,7 +248,6 @@ function build_appendix_group(ids, group_name)
     save_appendix(p_re, "$(group_name)_regret_early")
     save_appendix(p_rl, "$(group_name)_regret_late")
 
-    # ── LOLE ──────────────────────────────────────────────────────────────────
     p_lf = make_plot(ids, :lole_full_h,
         "LOLE — $(group_name) (full range)", "LOLE [h/yr]", 2, 1095;
         ref_hlines=lole_refs_full, smart_pct=0.93)
@@ -280,7 +268,6 @@ function build_appendix_group(ids, group_name)
     save_appendix(p_lm, "$(group_name)_lole_mid")
     save_appendix(p_ll, "$(group_name)_lole_late")
 
-    # ── investment deviation ──────────────────────────────────────────────────
     p_if = make_plot(ids, :inv_dev,
         "Investment deviation — $(group_name) (full range)", "Deviation [%]", 2, 1095;
         ref_hlines=[(0.0, false, :gray, :dash)], smart_pct=0.95)
@@ -304,7 +291,7 @@ build_appendix_group(vcat(BASELINES, [:k_medoids_rwc_elgersma]), "elgersma")
 build_appendix_group(vcat(BASELINES, [:k_medoids_rwc_ens]),      "ens")
 build_appendix_group(vcat(BASELINES, [:k_medoids_wc_frac]),      "wc_frac")
 
-# ── Appendix: full solve time (all 6 methods) ─────────────────────────────────
+# Solve time
 begin
     p = plot(; title="Solve time — all methods (full range)", xlabel="k", ylabel="Time [s]",
                FA..., legend=:topleft, legendbackgroundcolor=RGBA(1,1,1,0.7))
