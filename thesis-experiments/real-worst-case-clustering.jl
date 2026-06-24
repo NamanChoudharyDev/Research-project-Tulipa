@@ -1,30 +1,3 @@
-#   :k_medoids_rwc_netload
-#       Select top-n_wc periods by highest capacity-weighted net load.
-#       Net load(p) = Σ_h [ demand(p,h) − Σ_g capacity_g × availability_g(p,h) ]
-#       Sums residual demand across all 24 hours. Higher = more total stress.
-#
-#   :k_medoids_rwc_elgersma
-#       Select top-n_wc periods by the per-generator Elgersma residual score:
-#
-#       Step 1 — peak demand in period:
-#           D_max(p) = max_{h ∈ p}( demand(p,h) )
-#
-#       Step 2 — worst renewable ratio per generator (mirrors Elgersma eq. 2):
-#           γ_g(p) = min_{h ∈ p}( A_g(p,h) / demand(p,h) )
-#
-#       Step 3 — worst-case availability at peak demand (mirrors Elgersma eq. 3):
-#           A_g_worst(p) = D_max(p) × γ_g(p) × cap_g
-#
-#       Score(p) = D_max(p) − Σ_g A_g_worst(p)
-#       Higher score → harder period.
-#
-#   :k_medoids_rwc_ens       — Algorithm F
-#       Phase 1: run k medoids → solve → find rep_period with highest total ENS →
-#       among mapped periods pick p* = highest net load.
-#       Phase 2: run k−1 medoids → append p* as its own representative → solve.
-#       Zero ENS: return pilot result directly.
-
-
 # 0. Configurable parameters
 const N_WC_REAL = 1
 
@@ -50,7 +23,7 @@ end
 
 """
 Computes the net load score for every period:
-    net_load_score(p) = Σ_h [ demand(p,h) − Σ_g capacity_g × availability_g(p,h) ]
+    net_load_score(p) = Σ_h [ demand(p,h) - Σ_g capacity_g * availability_g(p,h) ]
 Higher score → higher stress.
 """
 function compute_period_net_loads(c, capacity_weights)
@@ -96,8 +69,8 @@ end
 Computes the per-generator Elgersma residual score for every period.
     D_max(p)     = max_{h ∈ p}( demand(p,h) )
     γ_g(p)       = min_{h ∈ p}( A_g(p,h) / demand(p,h) )   [per generator]
-    A_g_worst(p) = D_max(p) × γ_g(p) × cap_g
-    Score(p)     = D_max(p) − Σ_g A_g_worst(p)
+    A_g_worst(p) = D_max(p) * γ_g(p) * cap_g
+    Score(p)     = D_max(p) - Σ_g A_g_worst(p)
 demand = 0 rows excluded from ratio computation to avoid division by zero.
 """
 function compute_period_elgersma_scores(c)
@@ -162,73 +135,6 @@ function _write_rwc_table!(c, df, table_name)
 end
 
 """
-Handles table construction for the k = 1 case of the real worst-case method.
-Every real period maps to the single worst real period with weight 1.0.
-"""
-function create_rwc_tables_k1!(c, global_period_idx, n_periods, yr)
-    n_ts      = (DuckDB.query(c,
-        "SELECT MAX(timestep) AS m FROM profiles") |> DataFrame).m[1]
-    n_local   = ceil(Int, n_ts / period_duration)
-    scen_list = sort((DuckDB.query(c,
-        "SELECT DISTINCT scenario FROM profiles ORDER BY scenario") |> DataFrame).scenario)
-    scen_rank = div(global_period_idx - 1, n_local)
-    local_p   = mod(global_period_idx - 1, n_local) + 1
-    scen_val  = scen_list[scen_rank + 1]
-
-    # Fetch the 24 hourly rows for this specific scenario and local period
-    raw = DuckDB.query(c, """
-        SELECT (((timestep - 1) % $(period_duration)) + 1) AS local_ts,
-               profile_name,
-               value
-        FROM   profiles
-        WHERE  CAST(CEIL(timestep / $(period_duration).0) AS INTEGER) = $local_p
-          AND  scenario = $scen_val
-    """) |> DataFrame
-
-    rpp = DataFrame(
-        rep_period     = fill(1,  nrow(raw)),
-        timestep       = raw.local_ts,
-        milestone_year = fill(yr, nrow(raw)),
-        profile_name   = raw.profile_name,
-        value          = raw.value,
-    )
-    _write_rwc_table!(c, rpp, "profiles_rep_periods")
-
-    _write_rwc_table!(c,
-        DataFrame(
-            milestone_year = yr,
-            rep_period     = 1,
-            num_timesteps  = period_duration,
-            resolution     = 1.0,
-        ),
-        "rep_periods_data")
-
-    mapping_df = DuckDB.query(c, """
-        SELECT DISTINCT
-            $yr                                                     AS milestone_year,
-            scenario,
-            CAST(CEIL(timestep / $(period_duration).0) AS INTEGER) AS period,
-            1                                                       AS rep_period,
-            1.0                                                     AS weight
-        FROM profiles
-        ORDER BY scenario, period
-    """) |> DataFrame
-    _write_rwc_table!(c, mapping_df, "rep_periods_mapping")
-
-    timeframe_df = DuckDB.query(c, """
-        SELECT DISTINCT
-            $yr                                                     AS milestone_year,
-            scenario,
-            CAST(CEIL(timestep / $(period_duration).0) AS INTEGER) AS period,
-            $period_duration                                        AS num_timesteps
-        FROM profiles
-        ORDER BY scenario, period
-    """) |> DataFrame
-    _write_rwc_table!(c, timeframe_df, "timeframe_data")
-end
-
-
-"""
 Redirects mapping rows for a globally-indexed period to new rep_period slots.
 """
 function append_real_periods_to_tables!(c, global_period_indices, k_base, yr)
@@ -285,9 +191,7 @@ end
 # 4. run_once_rwc
 
 """
-score_col  — :net_load_score or :elgersma_score; highest = worst-case.
-k ≤ n_wc   → tables built from scratch with worst real period as sole representative.
-k > n_wc   → TC.cluster! on k−n_wc medoids, top-n_wc real periods appended.
+score_col -> :net_load_score or :elgersma_score
 """
 function run_once_rwc(
     k,
@@ -299,24 +203,15 @@ function run_once_rwc(
     c  = load_connection()
     t0 = time_ns()
     yr = isempty(target_years) ? 0 : target_years[1]
-    n_sc      = (DuckDB.query(c,
-        "SELECT COUNT(DISTINCT scenario) AS n FROM profiles") |> DataFrame).n[1]
-    n_ts      = (DuckDB.query(c,
-        "SELECT MAX(timestep) AS m FROM profiles") |> DataFrame).m[1]
-    n_periods = ceil(Int, n_sc * n_ts / period_duration)
 
     n_select = min(n_wc, nrow(score_df))
     sorted   = sort(score_df, score_col; rev=true)
     selected = sorted.period[1:n_select]
 
-    if k <= n_select
-        create_rwc_tables_k1!(c, selected[1], n_periods, yr)
-    else
-        k_base = k - n_select
-        TC.cluster!(c, period_duration, k_base; method=:k_medoids, layout = LAYOUT)
-        fix_milestone_year!(c)
-        append_real_periods_to_tables!(c, selected, k_base, yr)
-    end
+    k_base = k - n_select
+    TC.cluster!(c, period_duration, k_base; method=:k_medoids, layout = LAYOUT)
+    fix_milestone_year!(c)
+    append_real_periods_to_tables!(c, selected, k_base, yr)
 
     TEM.populate_with_defaults!(c)
     prob = try
@@ -344,20 +239,17 @@ end
 """
 Two-phase model-guided real worst-case selection.
 Phase 1: run k medoids → solve → find rep with highest ENS → pick p* = max net load in that cluster.
-Phase 2: run k−1 medoids → append p* → solve again.
+Phase 2: run k - 1 medoids → append p* → solve again.
 Zero ENS: return pilot result directly. Elapsed time includes both solves.
 """
 function run_once_rwc_ens(k; return_problem = false)
     yr = isempty(target_years) ? 0 : target_years[1]
     t0 = time_ns()
 
-    # Phase 1: pilot solve
+    # First solve
     c_pilot   = load_connection()
-    n_sc_pilot = (DuckDB.query(c_pilot,
-        "SELECT COUNT(DISTINCT scenario) AS n FROM profiles") |> DataFrame).n[1]
     n_ts_pilot = (DuckDB.query(c_pilot,
         "SELECT MAX(timestep) AS m FROM profiles") |> DataFrame).m[1]
-    n_periods  = ceil(Int, n_sc_pilot * n_ts_pilot / period_duration)
     n_local    = ceil(Int, n_ts_pilot / period_duration)
 
     cap_weights = load_capacity_weights(c_pilot)
@@ -389,7 +281,7 @@ function run_once_rwc_ens(k; return_problem = false)
         LIMIT  1
     """) |> DataFrame
 
-    # Zero ENS: system feasible, return pilot result directly
+    # Zero ENS
     if nrow(ens_by_rp) == 0
         elapsed = (time_ns() - t0) / 1e9
         inv     = investment_cost(c_pilot)
@@ -429,16 +321,12 @@ function run_once_rwc_ens(k; return_problem = false)
 
     DBInterface.close!(c_pilot)
 
-    # Phase 2: final solve
+    # Final solve
     c_final = load_connection()
 
-    if k == 1
-        create_rwc_tables_k1!(c_final, p_star, n_periods, yr)
-    else
-        TC.cluster!(c_final, period_duration, k - 1; method=:k_medoids, layout = LAYOUT)
-        fix_milestone_year!(c_final)
-        append_real_periods_to_tables!(c_final, [p_star], k - 1, yr)
-    end
+    TC.cluster!(c_final, period_duration, k - 1; method=:k_medoids, layout = LAYOUT)
+    fix_milestone_year!(c_final)
+    append_real_periods_to_tables!(c_final, [p_star], k - 1, yr)
 
     TEM.populate_with_defaults!(c_final)
 
