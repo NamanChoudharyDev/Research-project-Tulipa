@@ -1,0 +1,86 @@
+{
+  "projectName": "TulipaClustering.jl",
+  "projectOwner": "TulipaEnergy",
+  "files": [
+    "README.md",
+    "docs/src/index.md"
+  ],
+  "commitType": "docs",
+  "commitConvention": "angular",
+  "contributorsPerLine": 7,
+  "contributors": [
+    {
+      "login": "greg-neustroev",
+      "name": "Greg Neustroev",
+      "avatar_url": "https://avatars.githubusercontent.com/u/32451432?v=4",
+      "profile": "https://github.com/greg-neustroev",
+      "contributions": [
+        "code",
+        "doc",
+        "maintenance",
+        "review"
+      ]
+    },
+    {
+      "login": "g-moralesespana",
+      "name": "Germán Morales",
+      "avatar_url": "https://avatars.githubusercontent.com/u/42405171?v=4",
+      "profile": "https://github.com/g-moralesespana",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "abelsiqueira",
+      "name": "Abel Soares Siqueira",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1068752?v=4",
+      "profile": "https://abelsiqueira.com",
+      "contributions": [
+        "code",
+        "review"
+      ]
+    },
+    {
+      "login": "datejada",
+      "name": "Diego Alejandro Tejada Arango",
+      "avatar_url": "https://avatars.githubusercontent.com/u/12887482?v=4",
+      "profile": "https://github.com/datejada",
+      "contributions": [
+        "code",
+        "doc",
+        "review",
+        "maintenance"
+      ]
+    },
+    {
+      "login": "clizbe",
+      "name": "Lauren Clisby",
+      "avatar_url": "https://avatars.githubusercontent.com/u/11889283?v=4",
+      "profile": "https://github.com/clizbe",
+      "contributions": [
+        "projectManagement",
+        "ideas"
+      ]
+    },
+    {
+      "login": "lottekremer",
+      "name": "Lotte Kremer",
+      "avatar_url": "https://avatars.githubusercontent.com/u/119004215?v=4",
+      "profile": "https://github.com/lottekremer",
+      "contributions": [
+        "code",
+        "ideas"
+      ]
+    },
+    {
+      "login": "alicezurru",
+      "name": "alicezurru",
+      "avatar_url": "https://avatars.githubusercontent.com/u/162047447?v=4",
+      "profile": "https://github.com/alicezurru",
+      "contributions": [
+        "test",
+        "code"
+      ]
+    }
+  ]
+}

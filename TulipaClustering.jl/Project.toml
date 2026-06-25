@@ -1,0 +1,33 @@
+name = "TulipaClustering"
+uuid = "314fac8b-c762-4aa3-9d12-851379729163"
+authors = ["Greg Neustroev <G.Neustroev@tudelft.nl> and contributors"]
+version = "0.5.2"
+
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+Clustering = "aaaa29a8-35af-508c-8bc3-b662a17a0fe5"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
+DuckDB = "d2f5444f-75bc-4fdf-ac35-56f514c445e1"
+DuckDB_jll = "2cbbab25-fc8b-58cf-88d4-687a02676033"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+ProgressBars = "49802e3a-d2f1-5c88-81d8-b72133a6f568"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TulipaIO = "7b3808b7-0819-42d4-885c-978ba173db11"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[compat]
+CSV = "0.10"
+Clustering = "0.15"
+DataFrames = "1"
+Distances = "0.10"
+DuckDB = "1"
+DuckDB_jll = "1.2.1"
+LinearAlgebra = "1.6"
+ProgressBars = "1"
+SparseArrays = "1.6"
+Statistics = "1"
+TulipaIO = "0.4.3, 0.5"
+TOML = "1"
+julia = "1.10"

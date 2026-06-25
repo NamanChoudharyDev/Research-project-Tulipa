@@ -1,0 +1,881 @@
+# Tools to prepare data and structures to the model creation
+
+"""
+    add_expression_terms_rep_period_constraints!(
+        connection,
+        cons::TulipaConstraint,
+        flow::TulipaVariable,
+        workspace;
+        use_highest_resolution = true,
+        multiply_by_duration = true,
+        add_min_outgoing_flow_duration = false,
+        multiply_by_capacity_coefficient = false,
+        include_commission_year = false,
+    )
+
+Computes the incoming and outgoing expressions per row of `cons` for the constraints
+that are within the representative periods.
+
+Include_commission_year is only used for the constraints regarding the flows for the compact_efficiencies vintage method.
+If true, the expression will include the commission_year of the flows.
+If false (the default), it will only use the milestone_year.
+
+This function is only used internally in the model.
+
+This strategy is based on the replies in this discourse thread:
+
+  - https://discourse.julialang.org/t/help-improving-the-speed-of-a-dataframes-operation/107615/23
+
+# Implementation
+
+This expression computation uses a workspace to store all variables defined for
+each timestep.
+The idea of this algorithm is to append all variables defined at time
+`timestep` in `workspace[timestep]` and then aggregate then for the constraint
+time block.
+
+The algorithm works like this:
+
+```
+1. Loop over each group of (asset, milestone_year, rep_period)
+1.1. Loop over each variable in the group: (var_id, var_time_block_start, var_time_block_end)
+1.1.1. Loop over each timestep in var_time_block_start:var_time_block_end
+1.1.1.1. Compute the coefficient of the variable based on the rep_period resolution and the variable coefficients
+1.1.1.2. Store (var_id, coefficient) in workspace[timestep]
+1.2. Loop over each constraint in the group: (cons_id, cons_time_block_start, cons_time_block_end)
+1.2.1. Aggregate all variables in workspace[timestep] for timestep in the time block to create a list of variable ids and their coefficients [(var_id1, coef1), ...]
+1.2.2. Compute the expression using the variable container, the ids and coefficients
+```
+
+Note:
+- On step 1.2.1, the aggregation can be either by uniqueness or not, i.e., if
+  the variable happens in more that one `workspace[timestep]`, should we add up
+  the coefficients or not. This is defined by the keyword `multiply_by_duration`
+"""
+function add_expression_terms_rep_period_constraints!(
+    connection,
+    cons::TulipaConstraint,
+    flow::TulipaVariable,
+    workspace;
+    use_highest_resolution = true,
+    multiply_by_duration = true,
+    add_min_outgoing_flow_duration = false,
+    multiply_by_capacity_coefficient = false,
+    include_commission_year = false,
+)
+    # cons' asset will be matched with flow's to_asset or from_asset, depending on whether
+    # we are filling incoming or outgoing flows
+    cases = [
+        (expr_key = :incoming, asset_match = :to_asset, selected_assets = ["consumer"]),
+        (
+            expr_key = :outgoing,
+            asset_match = :from_asset,
+            selected_assets = ["consumer", "producer"],
+        ),
+    ]
+    num_rows = get_num_rows(connection, cons)
+
+    # year_columns holds the relevant column names that will be expanded into the auxiliary functions,
+    # or into the SQL select and join clauses
+    year_columns = if include_commission_year
+        [:milestone_year, :commission_year]
+    else
+        [:milestone_year]
+    end
+
+    # The SQL strategy to improve looping over the groups and then the
+    # constraints and variables, is to create grouped tables beforehand and join them
+    # The grouped constraint table is created below
+    grouped_cons_table_name = "t_grouped_$(cons.table_name)"
+    _create_group_table_if_not_exist!(
+        connection,
+        cons.table_name,
+        grouped_cons_table_name,
+        [:asset; year_columns; :rep_period],
+        [:id, :time_block_start, :time_block_end],
+    )
+
+    for case in cases
+        attach_expression!(cons, case.expr_key, Vector{JuMP.AffExpr}(undef, num_rows))
+        cons.expressions[case.expr_key] .= JuMP.AffExpr(0.0)
+        conditions_to_add_min_outgoing_flow_duration =
+            add_min_outgoing_flow_duration && case.expr_key == :outgoing
+        if conditions_to_add_min_outgoing_flow_duration
+            attach_coefficient!(cons, :min_outgoing_flow_duration, ones(num_rows))
+        end
+
+        # The grouped variable table is created below for each case (from_asset=asset, to_asset=asset)
+        grouped_var_table_name = "t_grouped_$(flow.table_name)_match_on_$(case.asset_match)"
+        _create_group_table_if_not_exist!(
+            connection,
+            flow.table_name,
+            grouped_var_table_name,
+            [case.asset_match; year_columns; :rep_period],
+            [
+                :id,
+                :time_block_start,
+                :time_block_end,
+                :capacity_coefficient,
+                :conversion_coefficient,
+            ];
+            rename_columns = Dict(case.asset_match => :asset),
+        )
+
+        resolution_query = multiply_by_duration ? "rep_periods_data.resolution" : "1.0::FLOAT8"
+
+        year_select = join(("cons.$col" for col in year_columns), ", ")
+        year_join_var = join(("cons.$col = var.$col" for col in year_columns), " AND ")
+        year_join_rp = "cons.$(year_columns[1]) = rep_periods_data.milestone_year"
+
+        # Start of the algorithm
+        # 1. Loop over each group of (asset, milestone_year, rep_period)
+        for group_row in DuckDB.query(
+            connection,
+            "SELECT
+                cons.asset,
+                $year_select,
+                cons.rep_period,
+                cons.id AS cons_id_vec,
+                cons.time_block_start AS cons_time_block_start_vec,
+                cons.time_block_end AS cons_time_block_end_vec,
+                var.id AS var_id_vec,
+                var.time_block_start AS var_time_block_start_vec,
+                var.time_block_end AS var_time_block_end_vec,
+                var.capacity_coefficient,
+                var.conversion_coefficient,
+                asset.type AS type,
+                $resolution_query AS resolution,
+            FROM $grouped_cons_table_name AS cons
+            LEFT JOIN $grouped_var_table_name AS var
+                ON cons.asset = var.asset
+                AND $year_join_var
+                AND cons.rep_period = var.rep_period
+            LEFT JOIN asset
+                ON cons.asset = asset.asset
+            LEFT JOIN rep_periods_data
+                ON cons.rep_period = rep_periods_data.rep_period
+                AND $year_join_rp
+            WHERE
+                len(var.id) > 0
+            ",
+        )
+            resolution = group_row.resolution::Float64
+            empty!.(workspace)
+            outgoing_flow_durations = typemax(Int64) #LARGE_NUMBER to start finding the minimum outgoing flow duration
+
+            # Step 1.1. Loop over each variable in the group
+            for (
+                var_id::Int64,
+                time_block_start::Int32,
+                time_block_end::Int32,
+                capacity_coefficient::Float64,
+                conversion_coefficient::Float64,
+            ) in zip(
+                group_row.var_id_vec::Vector{Union{Missing,Int64}},
+                group_row.var_time_block_start_vec::Vector{Union{Missing,Int32}},
+                group_row.var_time_block_end_vec::Vector{Union{Missing,Int32}},
+                group_row.capacity_coefficient::Vector{Union{Missing,Float64}},
+                group_row.conversion_coefficient::Vector{Union{Missing,Float64}},
+            )
+                time_block = time_block_start:time_block_end
+                # Step 1.1.1.
+                for timestep in time_block
+                    # Step 1.1.1.1.
+                    # Set the flow coefficient for incoming and outgoing flows of consumer assets and outgoing flows for producer assets
+                    # And when you want the highest resolution (which is asset type-agnostic)
+                    # If it is for the capacity constraints, multiply by the capacity constraint coefficient for these cases, otherwise, just use the 1.0
+                    # Else if the asset is a conversion asset the flow coefficient is the conversion coefficient
+                    # In any other case, the flow coefficient is equal to one.
+                    flow_coefficient =
+                        if group_row.type::String in case.selected_assets || use_highest_resolution
+                            if multiply_by_capacity_coefficient
+                                capacity_coefficient
+                            else
+                                1.0
+                            end
+                        elseif group_row.type::String == "conversion"
+                            conversion_coefficient
+                        else
+                            1.0
+                        end
+                    # Step 1.1.1.2.
+                    workspace[timestep][var_id] = resolution * flow_coefficient
+                end
+                if conditions_to_add_min_outgoing_flow_duration
+                    outgoing_flow_durations =
+                        min(outgoing_flow_durations, (time_block_end - time_block_start + 1)::Int64)
+                end
+            end
+
+            # Step 1.2. Loop over each constraint
+            for (cons_id::Int64, time_block_start::Int32, time_block_end::Int32) in zip(
+                group_row.cons_id_vec::Vector{Union{Missing,Int64}},
+                group_row.cons_time_block_start_vec::Vector{Union{Missing,Int32}},
+                group_row.cons_time_block_end_vec::Vector{Union{Missing,Int32}},
+            )
+                time_block = time_block_start:time_block_end
+                workspace_agg = Dict{Int,Float64}()
+                # Step 1.2.1.
+                for timestep in time_block
+                    for (var_id, var_coefficient) in workspace[timestep]
+                        if !haskey(workspace_agg, var_id)
+                            # First time a variable is encountered it adds to the aggregation
+                            workspace_agg[var_id] = var_coefficient
+                        elseif multiply_by_duration
+                            # In this case, accumulates more of the variable,
+                            # i.e., which effectively multiplies the variable
+                            # by its duration in the time block
+                            workspace_agg[var_id] += var_coefficient
+                        end
+                    end
+                end
+                if length(workspace_agg) > 0
+                    # Step 1.2.2.
+                    cons.expressions[case.expr_key][cons_id] = JuMP.AffExpr(0.0)
+                    this_expr = cons.expressions[case.expr_key][cons_id]
+                    for (var_id, duration) in workspace_agg
+                        JuMP.add_to_expression!(this_expr, duration, flow.container[var_id])
+                    end
+                end
+                if conditions_to_add_min_outgoing_flow_duration
+                    cons.coefficients[:min_outgoing_flow_duration][cons_id] =
+                        outgoing_flow_durations
+                end
+            end
+        end
+    end
+
+    return
+end
+
+"""
+    add_expression_terms_inter_period_constraints!(
+        connection,
+        cons,
+        flow,
+        profiles;
+        is_storage_level = false,
+    )
+
+Computes the incoming and outgoing expressions per row of df_inter for the constraints
+that are between (inter) the representative periods.
+
+This function is only used internally in the model.
+
+"""
+function add_expression_terms_inter_period_constraints!(
+    connection,
+    cons::TulipaConstraint,
+    flow::TulipaVariable,
+    workspace;
+    is_storage_level = false,
+)
+    num_rows = get_num_rows(connection, cons)
+
+    cases = [(expr_key = :outgoing, asset_match = :from_asset)]
+    if is_storage_level
+        push!(cases, (expr_key = :incoming, asset_match = :to_asset))
+    end
+
+    for case in cases
+        attach_expression!(cons, case.expr_key, Vector{JuMP.AffExpr}(undef, num_rows))
+        cons.expressions[case.expr_key] .= JuMP.AffExpr(0.0)
+    end
+
+    grouped_cons_table_name = "t_grouped_$(cons.table_name)"
+    _create_group_table_if_not_exist!(
+        connection,
+        cons.table_name,
+        grouped_cons_table_name,
+        [:asset, :milestone_year, :scenario],
+        [:id, :period_block_start, :period_block_end],
+    )
+
+    grouped_rpmap_over_rp_table_name = "t_grouped_rpmap_over_rp"
+    _create_group_table_if_not_exist!(
+        connection,
+        "rep_periods_mapping",
+        grouped_rpmap_over_rp_table_name,
+        [:milestone_year, :scenario, :rep_period],
+        [:period, :weight];
+        order_agg_by = :period,
+    )
+
+    for case in cases
+        from_or_to = case.asset_match
+
+        grouped_var_table_name = "t_grouped_$(flow.table_name)_match_on_$(from_or_to)"
+        if !_check_if_table_exists(connection, grouped_var_table_name)
+            error(
+                """The table '$grouped_var_table_name' doesn't exist in the connection.
+                This table is created in the 'add_expression_terms_rep_period_constraints!' function.
+                Please, check if the function is being called before this one.""",
+            )
+        end
+
+        for group_row in DuckDB.query(
+            connection,
+            "CREATE OR REPLACE TEMP TABLE t_groups AS
+            SELECT
+                cons.asset,
+                cons.milestone_year,
+                cons.scenario,
+                ANY_VALUE(cons.id) AS cons_id_vec,
+                ANY_VALUE(cons.period_block_start) AS cons_period_block_start_vec,
+                ANY_VALUE(cons.period_block_end) AS cons_period_block_end_vec,
+                ARRAY_AGG(COALESCE(var.id, []) ORDER BY var.rep_period) AS var_id_vec,
+                ARRAY_AGG(COALESCE(var.time_block_start, []) ORDER BY var.rep_period) AS var_time_block_start_vec,
+                ARRAY_AGG(COALESCE(var.time_block_end, []) ORDER BY var.rep_period) AS var_time_block_end_vec,
+                ARRAY_AGG(var.rep_period ORDER BY var.rep_period) AS var_rep_periods,
+                ARRAY_AGG(rpdata.num_timesteps ORDER BY var.rep_period) AS num_timesteps,
+                ARRAY_AGG(COALESCE(rpmap.period, []) ORDER BY var.rep_period) AS var_periods,
+                ARRAY_AGG(COALESCE(rpmap.weight, []) ORDER BY var.rep_period) AS var_weights,
+            FROM $grouped_cons_table_name AS cons
+            LEFT JOIN $grouped_var_table_name AS var
+                ON cons.asset = var.asset
+                AND cons.milestone_year = var.milestone_year
+            LEFT JOIN $grouped_rpmap_over_rp_table_name AS rpmap
+                ON rpmap.milestone_year = cons.milestone_year
+                AND rpmap.scenario = cons.scenario
+                AND rpmap.rep_period = var.rep_period
+            LEFT JOIN rep_periods_data AS rpdata
+                ON rpdata.milestone_year = cons.milestone_year
+                AND rpdata.rep_period = var.rep_period
+            LEFT JOIN asset_milestone
+                ON asset_milestone.asset = cons.asset
+                AND asset_milestone.milestone_year = cons.milestone_year
+            GROUP BY cons.asset, cons.milestone_year, cons.scenario;
+            FROM t_groups
+            ",
+        )
+            empty!.(workspace)
+
+            for (
+                var_id_vec::Vector{Union{Missing,Int64}},
+                var_time_block_start_vec::Vector{Union{Missing,Int32}},
+                var_time_block_end_vec::Vector{Union{Missing,Int32}},
+                var_periods::Vector{Union{Missing,Int32}},
+                var_weights::Vector{Union{Missing,Float64}},
+            ) in zip(
+                group_row.var_id_vec::Vector{Union{Missing,Vector{Union{Missing,Int64}}}},
+                group_row.var_time_block_start_vec::Vector{
+                    Union{Missing,Vector{Union{Missing,Int32}}},
+                },
+                group_row.var_time_block_end_vec::Vector{
+                    Union{Missing,Vector{Union{Missing,Int32}}},
+                },
+                group_row.var_periods::Vector{Union{Missing,Vector{Union{Missing,Int32}}}},
+                group_row.var_weights::Vector{Union{Missing,Vector{Union{Missing,Float64}}}},
+            )
+
+                # Loop over each variable in the (group,rp) and accumulate them
+                group_flows_accumulation = Dict{Int,Float64}()
+
+                for (var_id::Int64, time_block_start::Int32, time_block_end::Int32) in zip(
+                    var_id_vec::Vector{Union{Missing,Int64}},
+                    var_time_block_start_vec::Vector{Union{Missing,Int32}},
+                    var_time_block_end_vec::Vector{Union{Missing,Int32}},
+                )
+                    coefficient = (time_block_end - time_block_start + 1.0)::Float64
+                    group_flows_accumulation[var_id] = coefficient
+                end
+
+                # Loop over each period in the group and add the accumulated flows to the workspace
+                for (period::Int32, weight::Float64) in zip(
+                    var_periods::Vector{Union{Missing,Int32}},
+                    var_weights::Vector{Union{Missing,Float64}},
+                )
+                    if weight == 0
+                        continue
+                    end
+                    # Note to future. Using `mergewith!` did not work because the
+                    # `combine` function is only applied for clashing entries, i.e., the weight is not applied uniformly to all entries.
+                    # It passed for most cases, since `weight = 1` in most cases.
+                    for (var_id, var_coef) in group_flows_accumulation
+                        if !haskey(workspace[period], var_id)
+                            workspace[period][var_id] = 0.0
+                        end
+                        workspace[period][var_id] += var_coef * weight
+                    end
+                end
+            end
+
+            # Loop over each constraint and aggregate from the workspace into the expression
+            for (cons_id::Int64, period_block_start::Int32, period_block_end::Int32) in zip(
+                group_row.cons_id_vec::Vector{Union{Missing,Int64}},
+                group_row.cons_period_block_start_vec::Vector{Union{Missing,Int32}},
+                group_row.cons_period_block_end_vec::Vector{Union{Missing,Int32}},
+            )
+                period_block = period_block_start:period_block_end
+                workspace_aggregation = Dict{Int,Float64}()
+                for period in period_block
+                    mergewith!(+, workspace_aggregation, workspace[period])
+                end
+
+                if length(workspace_aggregation) > 0
+                    cons.expressions[case.expr_key][cons_id] = JuMP.AffExpr(0.0)
+                    this_expr = cons.expressions[case.expr_key][cons_id]
+                    for (var_id, coefficient) in workspace_aggregation
+                        JuMP.add_to_expression!(this_expr, coefficient, flow.container[var_id])
+                    end
+                end
+            end
+        end
+    end
+
+    return
+end
+
+"""
+    add_expression_terms_inter_period_storage_constraints!(
+        connection,
+        cons,
+        accumulated_intra_period,
+        workspace
+    )
+
+Computes the accumulated intra period expressions per row
+of the inter period level storage constraints.
+
+This function is only used internally in the model.
+
+# Implementation
+
+This expression computation uses a workspace to store the accumulated
+intra-period variables defined for each period.
+The idea of this algorithm is to map the last intra-period storage-level
+variable of each representative period to the original periods using the
+representative-period weights, store these weighted contributions in
+`workspace[period]`, and then aggregate them over each constraint period block.
+
+The algorithm works like this:
+
+1. Loop over each group of (asset, milestone_year, scenario)
+1.1. Loop over each representative period in the group
+1.1.1. Extract the last accumulated intra-period variable of the representative period
+1.1.2. Compute the coefficient of the variable from its representative period weigth
+1.1.3. Loop over each original period mapped from the representative period
+1.1.3.1. Multiply the coefficient by the mapping weight
+1.1.3.2. Store (var_id, weighted_coefficient) in workspace[period]
+1.2. Loop over each constraint in the group: (cons_id, period_block_start, period_block_end)
+1.2.1. Aggregate all variables in workspace[period] for period in the period block
+1.2.2. Compute the expression using the variable container, the ids and coefficients
+
+Note:
+- The grouped SQL query first reduces each representative period to its last
+  accumulated intra-period variable, because this is the value that propagates
+  to the inter-period storage balance.
+- The workspace is indexed by original period, not by timestep, because the
+  constraints operate on period blocks over `rep_periods_mapping`.
+"""
+function add_expression_terms_inter_period_storage_constraints!(
+    connection,
+    cons::TulipaConstraint,
+    accumulated_intra_period::TulipaVariable,
+    workspace,
+)
+    num_rows = get_num_rows(connection, cons)
+    expr_key = :accumulated_intra_period
+
+    attach_expression!(cons, expr_key, Vector{JuMP.AffExpr}(undef, num_rows))
+    cons.expressions[expr_key] .= JuMP.AffExpr(0.0)
+
+    grouped_cons_table_name = "t_grouped_$(cons.table_name)"
+    _create_group_table_if_not_exist!(
+        connection,
+        cons.table_name,
+        grouped_cons_table_name,
+        [:asset, :milestone_year, :scenario],
+        [:id, :period_block_start, :period_block_end],
+    )
+
+    grouped_rpmap_over_rp_table_name = "t_grouped_rpmap_over_rp"
+    _create_group_table_if_not_exist!(
+        connection,
+        "rep_periods_mapping",
+        grouped_rpmap_over_rp_table_name,
+        [:milestone_year, :scenario, :rep_period],
+        [:period, :weight];
+        order_agg_by = :period,
+    )
+
+    grouped_var_table_name = "t_grouped_$(accumulated_intra_period.table_name)"
+    _create_group_table_if_not_exist!(
+        connection,
+        accumulated_intra_period.table_name,
+        grouped_var_table_name,
+        [:asset, :milestone_year, :rep_period],
+        [:id, :time_block_start, :time_block_end],
+    )
+
+    sql = """
+    CREATE OR REPLACE TEMP TABLE t_groups AS
+    WITH
+        last_var_per_rep_period AS (
+            SELECT
+                asset,
+                milestone_year,
+                rep_period,
+            list_last(id) AS id,
+            list_last(time_block_start) AS time_block_start,
+            list_last(time_block_end) AS time_block_end,
+        FROM $grouped_var_table_name
+        )
+    SELECT
+        cons.asset,
+        cons.milestone_year,
+        cons.scenario,
+        ANY_VALUE(cons.id) AS cons_id_vec,
+        ANY_VALUE(cons.period_block_start) AS cons_period_block_start_vec,
+        ANY_VALUE(cons.period_block_end) AS cons_period_block_end_vec,
+        ARRAY_AGG(var.id ORDER BY var.rep_period) AS var_id_vec,
+        ARRAY_AGG(var.time_block_start ORDER BY var.rep_period) AS var_time_block_start_vec,
+        ARRAY_AGG(var.time_block_end ORDER BY var.rep_period) AS var_time_block_end_vec,
+        ARRAY_AGG(var.rep_period ORDER BY var.rep_period) AS var_rep_periods,
+        ARRAY_AGG(rpdata.num_timesteps ORDER BY var.rep_period) AS num_timesteps,
+        ARRAY_AGG(COALESCE(rpmap.period, []) ORDER BY var.rep_period) AS var_periods,
+        ARRAY_AGG(COALESCE(rpmap.weight, []) ORDER BY var.rep_period) AS var_weights,
+    FROM $grouped_cons_table_name AS cons
+    LEFT JOIN last_var_per_rep_period AS var
+        ON cons.asset = var.asset
+        AND cons.milestone_year = var.milestone_year
+    LEFT JOIN $grouped_rpmap_over_rp_table_name AS rpmap
+        ON rpmap.milestone_year = cons.milestone_year
+        AND rpmap.scenario = cons.scenario
+        AND rpmap.rep_period = var.rep_period
+    LEFT JOIN rep_periods_data AS rpdata
+        ON rpdata.milestone_year = cons.milestone_year
+        AND rpdata.rep_period = var.rep_period
+    LEFT JOIN asset_milestone
+        ON asset_milestone.asset = cons.asset
+        AND asset_milestone.milestone_year = cons.milestone_year
+    GROUP BY cons.asset, cons.milestone_year, cons.scenario;
+    FROM t_groups
+    """
+
+    for group_row in DuckDB.query(connection, sql)
+        empty!.(workspace)
+        workspace_aggregation = Dict{Int,Float64}()
+        for (var_id, time_block_start, time_block_end, var_periods, var_weights) in zip(
+            group_row.var_id_vec,
+            group_row.var_time_block_start_vec,
+            group_row.var_time_block_end_vec,
+            group_row.var_periods,
+            group_row.var_weights,
+        )
+
+            # Loop over each period in the group and add the accumulated intra-period storage levels to the workspace
+            for (period, weight) in zip(var_periods, var_weights)
+                if ismissing(period) || ismissing(weight) || iszero(weight)
+                    continue
+                end
+
+                workspace_at_period = workspace[period]
+                workspace_at_period[var_id] = get(workspace_at_period, var_id, 0.0) + weight
+            end
+        end
+
+        # Loop over each constraint and aggregate from the workspace into the expression
+        for (cons_id, period_block_start, period_block_end) in zip(
+            group_row.cons_id_vec,
+            group_row.cons_period_block_start_vec,
+            group_row.cons_period_block_end_vec,
+        )
+            empty!(workspace_aggregation)
+            for period in period_block_start:period_block_end
+                mergewith!(+, workspace_aggregation, workspace[period])
+            end
+
+            if !isempty(workspace_aggregation)
+                cons.expressions[expr_key][cons_id] = JuMP.AffExpr(0.0)
+                this_expr = cons.expressions[expr_key][cons_id]
+                for (var_id, coefficient) in workspace_aggregation
+                    JuMP.add_to_expression!(
+                        this_expr,
+                        coefficient,
+                        accumulated_intra_period.container[var_id],
+                    )
+                end
+            end
+        end
+    end
+
+    return nothing
+end
+
+function add_expressions_to_constraints!(connection, variables, constraints)
+    # creating a workspace with enough entries for any of the representative periods or normal periods
+    maximum_num_timesteps = get_single_element_from_query_and_ensure_its_only_one(
+        DuckDB.query(connection, "SELECT MAX(num_timesteps::BIGINT) FROM rep_periods_data"),
+    )::Int64
+
+    maximum_num_periods = get_single_element_from_query_and_ensure_its_only_one(
+        DuckDB.query(connection, "SELECT MAX(period::BIGINT) FROM rep_periods_mapping"),
+    )::Int64
+    Tmax = max(maximum_num_timesteps, maximum_num_periods)
+    workspace = [Dict{Int,Float64}() for _ in 1:Tmax]
+
+    # Unpack variables
+    # Creating the incoming and outgoing flow expressions
+    @timeit to "add_expression_terms_rep_period_constraints!" add_expression_terms_rep_period_constraints!(
+        connection,
+        constraints[:balance_conversion],
+        variables[:flow],
+        workspace;
+        use_highest_resolution = false,
+        multiply_by_duration = true,
+    )
+    @timeit to "add_expression_terms_rep_period_constraints!" add_expression_terms_rep_period_constraints!(
+        connection,
+        constraints[:balance_storage_rep_period],
+        variables[:flow],
+        workspace;
+        use_highest_resolution = false,
+        multiply_by_duration = true,
+    )
+    @timeit to "add_expression_terms_rep_period_constraints!" add_expression_terms_rep_period_constraints!(
+        connection,
+        constraints[:balance_consumer],
+        variables[:flow],
+        workspace;
+        use_highest_resolution = true,
+        multiply_by_duration = false,
+    )
+
+    @timeit to "add_expression_terms_accumulated_storage_intra_period_constraints!" add_expression_terms_rep_period_constraints!(
+        connection,
+        constraints[:accumulated_storage_intra_period],
+        variables[:flow],
+        workspace;
+        use_highest_resolution = false,
+        multiply_by_duration = true,
+    )
+
+    for table_name in (
+        :capacity_outgoing_compact_efficiencies_vintage_method,
+        :min_outgoing_flow_for_transport_vintage_flows,
+    )
+        @timeit to "add_expression_terms_rep_period_constraints! for $table_name" add_expression_terms_rep_period_constraints!(
+            connection,
+            constraints[table_name],
+            variables[:vintage_flow],
+            workspace;
+            use_highest_resolution = true,
+            multiply_by_duration = false,
+            multiply_by_capacity_coefficient = true,
+            include_commission_year = true,
+        )
+    end
+
+    for table_name in (
+        :capacity_incoming_aggregated_vintage_method,
+        :capacity_incoming_aggregated_vintage_method_non_investable_storage_with_binary,
+        :capacity_incoming_aggregated_vintage_method_investable_storage_with_binary,
+        :capacity_outgoing_compact_profiles_vintage_method,
+        :capacity_outgoing_aggregated_vintage_method,
+        :capacity_outgoing_aggregated_vintage_method_non_investable_storage_with_binary,
+        :capacity_outgoing_aggregated_vintage_method_investable_storage_with_binary,
+        :min_outgoing_flow_for_transport_flows_without_unit_commitment,
+        :min_incoming_flow_for_transport_flows,
+    )
+        @timeit to "add_expression_terms_rep_period_constraints! for $table_name" add_expression_terms_rep_period_constraints!(
+            connection,
+            constraints[table_name],
+            variables[:flow],
+            workspace;
+            use_highest_resolution = true,
+            multiply_by_duration = false,
+            multiply_by_capacity_coefficient = true,
+        )
+
+        @timeit to "attach is_charging expression to $table_name" attach_expression_on_constraints_grouping_variables!(
+            connection,
+            constraints[table_name],
+            variables[:is_charging],
+            :is_charging,
+            workspace,
+            agg_strategy = :mean,
+        )
+    end
+
+    for table_name in (
+        :min_output_flow_with_unit_commitment,
+        :max_ramp_with_unit_commitment,
+        :max_ramp_without_unit_commitment,
+        :max_output_flow_with_basic_unit_commitment,
+    )
+        @timeit to "add_expression_terms_rep_period_constraints!" add_expression_terms_rep_period_constraints!(
+            connection,
+            constraints[table_name],
+            variables[:flow],
+            workspace;
+            use_highest_resolution = true,
+            multiply_by_duration = false,
+            add_min_outgoing_flow_duration = true,
+        )
+    end
+    @timeit to "add_expression_terms_inter_period_storage_constraints!" add_expression_terms_inter_period_storage_constraints!(
+        connection,
+        constraints[:balance_storage_inter_period],
+        variables[:accumulated_storage_level_intra_period],
+        workspace,
+    )
+    @timeit to "add_expression_terms_inter_period_constraints!" add_expression_terms_inter_period_constraints!(
+        connection,
+        constraints[:max_energy_inter_period],
+        variables[:flow],
+        workspace;
+    )
+    @timeit to "add_expression_terms_inter_period_constraints!" add_expression_terms_inter_period_constraints!(
+        connection,
+        constraints[:min_energy_inter_period],
+        variables[:flow],
+        workspace;
+    )
+    for table_name in (
+        :min_output_flow_with_unit_commitment,
+        :max_output_flow_with_basic_unit_commitment,
+        :max_ramp_with_unit_commitment,
+    )
+        @timeit to "attach units_on expression to $table_name" attach_expression_on_constraints_grouping_variables!(
+            connection,
+            constraints[table_name],
+            variables[:units_on],
+            :units_on,
+            workspace,
+            agg_strategy = :unique_sum,
+        )
+    end
+
+    return
+end
+
+function prepare_profiles_structure(connection)
+    # Independent of being rolling horizon or not, these are complete
+    rep_period = Dict(
+        (row.profile_name, row.milestone_year, row.rep_period) =>
+            ProfileWithRollingHorizon(convert(Vector{Float64}, row.values)) for
+        row in DuckDB.query(
+            connection,
+            """
+            SELECT DISTINCT ON(profile_name, milestone_year, rep_period)
+                profile_name,
+                milestone_year,
+                rep_period,
+                ARRAY_AGG(value ORDER BY timestep) AS values,
+            FROM profiles_rep_periods
+            GROUP BY profile_name, milestone_year, rep_period
+            """,
+        )
+    )
+
+    inter_period = Dict(
+        (row.profile_name, row.milestone_year, row.scenario) =>
+            convert(Vector{Float64}, row.values) for row in DuckDB.query(
+            connection,
+            "SELECT DISTINCT ON(profiles.profile_name, profiles.milestone_year, atp.scenario)
+                profiles.profile_name,
+                profiles.milestone_year,
+                atp.scenario,
+                ARRAY_AGG(profiles.value ORDER BY profiles.period) AS values,
+            FROM profiles_timeframe AS profiles
+            INNER JOIN assets_timeframe_profiles AS atp
+                ON profiles.profile_name = atp.profile_name
+                AND profiles.milestone_year = atp.milestone_year
+            GROUP BY profiles.profile_name, profiles.milestone_year, atp.scenario
+            ",
+        )
+    )
+
+    # TODO: Try to convert the flow below using group by like above
+    # Creating inter_period profiles of inflows using the inflows
+    # profiles of rep_periods (asset_milestone.storage_inflows is
+    # asset-specific and is not used here).
+    # These profiles are scenario-specific since rep_periods_mapping depends on scenario
+    for row in DuckDB.query(
+        connection,
+        """
+        WITH
+            cte_scenarios AS (
+                SELECT DISTINCT scenario
+                FROM rep_periods_mapping
+            ),
+            cte_storage_assets AS (
+                SELECT asset.asset
+                FROM asset
+                WHERE asset.type = 'storage' AND asset.is_seasonal
+            )
+        SELECT DISTINCT
+            assets_profiles.profile_name,
+            assets_profiles.commission_year,
+            cte_scenarios.scenario
+        FROM assets_profiles
+        INNER JOIN cte_storage_assets
+            ON assets_profiles.asset = cte_storage_assets.asset
+        CROSS JOIN cte_scenarios
+        WHERE assets_profiles.profile_type = 'inflows'
+        """,
+    )
+        profile_name = row.profile_name
+        milestone_year = row.commission_year
+        scenario = row.scenario
+        values = Float64[
+            row.value for row in DuckDB.query(
+                connection,
+                """
+                WITH cte_profile_rp AS (
+                    SELECT
+                        $milestone_year AS milestone_year,
+                        $scenario AS scenario,
+                        profiles_rep_periods.rep_period,
+                        profiles_rep_periods.value
+                    FROM profiles_rep_periods
+                    WHERE profile_name = '$profile_name' AND milestone_year = $milestone_year
+                )
+                SELECT
+                    rp_map.period,
+                    SUM(cte_profile_rp.value * rp_map.weight) AS value
+                FROM cte_profile_rp
+                INNER JOIN rep_periods_mapping AS rp_map
+                    ON cte_profile_rp.milestone_year = rp_map.milestone_year
+                    AND cte_profile_rp.scenario = rp_map.scenario
+                    AND cte_profile_rp.rep_period = rp_map.rep_period
+                GROUP BY rp_map.period
+                ORDER BY rp_map.period
+                """,
+            )
+        ]
+        if length(values) > 0
+            inter_period[(profile_name, milestone_year, scenario)] = values
+        end
+    end
+
+    return ProfileLookup(rep_period, inter_period)
+end
+
+"""
+    get_model_parameters(connection)
+
+Gets the model parameters from the 'model_parameters' table in
+the database connection and returns them in a named tuple.
+"""
+function get_model_parameters(connection)
+    row = only(collect(DuckDB.query(connection, "SELECT * FROM model_parameters")))
+
+    social_rate = row.discount_rate
+    discount_year = row.discount_year
+
+    end_of_horizon = get_single_element_from_query_and_ensure_its_only_one(
+        DuckDB.query(
+            connection,
+            "SELECT MAX(milestone_year) AS end_of_horizon FROM rep_periods_data",
+        ),
+    )::Int32
+
+    lambda = row.risk_aversion_weight_lambda
+    alpha = row.risk_aversion_confidence_level_alpha
+
+    model_parameters = (; social_rate, discount_year, end_of_horizon, lambda, alpha)
+
+    return model_parameters
+end

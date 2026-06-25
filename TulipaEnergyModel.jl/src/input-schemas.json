@@ -1,0 +1,999 @@
+{
+  "asset": {
+    "asset": {
+      "description": "Unique identifier with the name of the asset.",
+      "type": "VARCHAR"
+    },
+    "capacity": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 0,
+      "description": "Capacity for one unit of the asset (is therefore multiplied by number of existing plus number of invested assets).",
+      "type": "DOUBLE",
+      "unit_of_measure": "MW"
+    },
+    "capacity_storage_energy": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 0,
+      "description": "Capacity of one storage unit.",
+      "type": "DOUBLE",
+      "unit_of_measure": "MWh"
+    },
+    "consumer_balance_sense": {
+      "constraints": {
+        "oneOf": [
+          "==",
+          ">=",
+          "<="
+        ]
+      },
+      "default": "==",
+      "description": "Is the sense of the consumer balance constraint, equal to, greater than or less than.",
+      "type": "VARCHAR"
+    },
+    "discount_rate": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 0,
+      "description": " e.g. 0.05 is 5 %. discount rate for the annuity calculation.",
+      "type": "DOUBLE",
+      "unit_of_measure": "ratio"
+    },
+    "economic_lifetime": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 1,
+      "description": "Economic lifetime of the unit for annuity calculation.",
+      "type": "INTEGER",
+      "unit_of_measure": "years"
+    },
+    "energy_to_power_ratio": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 0,
+      "description": "Fixed ratio between the energy storage capacity [MWh] and the discharge/charge capacity [MW] when `storage_method_energy = 'use_fixed_energy_to_power_ratio'`.",
+      "type": "DOUBLE",
+      "unit_of_measure": "h"
+    },
+    "investment_integer": {
+      "default": false,
+      "description": "Whether investment decisions are using integer variables.",
+      "type": "BOOLEAN"
+    },
+    "investment_integer_storage_energy": {
+      "default": false,
+      "description": "Whether investment for storage energy is integer or continuous. It only applies when `storage_method_energy = 'optimize_storage_capacity'`.",
+      "type": "BOOLEAN"
+    },
+    "is_seasonal": {
+      "default": false,
+      "description": "Whether seasonal storage (e.g., hydro) or not (e.g., battery)",
+      "type": "BOOLEAN"
+    },
+    "max_ramp_down": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 0,
+      "description": "Maximum ramping down rate as a portion of the capacity of asset.",
+      "type": "DOUBLE",
+      "unit_of_measure": "p.u./h"
+    },
+    "max_ramp_up": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 0,
+      "description": "Maximum ramping up rate as a portion of the capacity of asset.",
+      "type": "DOUBLE",
+      "unit_of_measure": "p.u./h"
+    },
+    "min_operating_point": {
+      "constraints": {
+        "maximum": 1,
+        "minimum": 0
+      },
+      "default": 0,
+      "description": "Minimum operating point or minimum stable generation level defined as a portion of the capacity of asset.",
+      "type": "DOUBLE",
+      "unit_of_measure": "p.u."
+    },
+    "ramping": {
+      "default": false,
+      "description": "Whether asset has ramping constraints or not.",
+      "type": "BOOLEAN"
+    },
+    "storage_method_energy": {
+      "constraints": {
+        "oneOf": [
+          "none",
+          "optimize_storage_capacity",
+          "use_fixed_energy_to_power_ratio"
+        ]
+      },
+      "default": "none",
+      "description": "Storage energy investment method. See constraints for possible values.",
+      "type": "VARCHAR"
+    },
+    "technical_lifetime": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 1,
+      "description": "Technical lifetime of the unit to determine for how long the capacity is considered from the commission year.",
+      "type": "INTEGER",
+      "unit_of_measure": "years"
+    },
+    "type": {
+      "constraints": {
+        "oneOf": [
+          "producer",
+          "consumer",
+          "storage",
+          "conversion"
+        ]
+      },
+      "description": "Type of energy asset.",
+      "type": "VARCHAR"
+    },
+    "unit_commitment": {
+      "constraints": {
+        "oneOf": [
+          "none",
+          "basic",
+          "3var"
+        ]
+      },
+      "default": "none",
+      "description": "Which unit commitment method to use. 'none' -> no unit commitment variables or constraints are created.",
+      "type": "VARCHAR"
+    },
+    "unit_commitment_integer": {
+      "default": false,
+      "description": "Whether the unit commitment variables are integer or not.",
+      "type": "BOOLEAN"
+    },
+    "use_binary_storage_method": {
+      "constraints": {
+        "oneOf": [
+          null,
+          "binary",
+          "relaxed_binary"
+        ]
+      },
+      "default": null,
+      "description": "Whether to use an extra binary variable for the storage assets to avoid charging and discharging simultaneously (null/empty/missing -> no binary).",
+      "type": "VARCHAR"
+    },
+    "vintage_method": {
+      "constraints": {
+        "oneOf": [
+          "aggregated",
+          "compact_efficiencies",
+          "compact_profiles"
+        ]
+      },
+      "default": "aggregated",
+      "description": "How vintage units are treated. It only applies to producer, storage, or conversion assets.",
+      "type": "VARCHAR"
+    }
+  },
+  "asset_both": {
+    "asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "commission_year": {
+      "description": "Year of commissioning",
+      "type": "INTEGER"
+    },
+    "decommissionable": {
+      "default": false,
+      "description": "Whether or not the asset can be decommissioned.",
+      "type": "BOOLEAN"
+    },
+    "initial_storage_units": {
+      "default": 0,
+      "description": "Number of existing storage units",
+      "type": "DOUBLE",
+      "unit_of_measure": "number"
+    },
+    "initial_units": {
+      "default": 0,
+      "description": "Number of existing units",
+      "type": "DOUBLE",
+      "unit_of_measure": "number"
+    },
+    "milestone_year": {
+      "description": "Year of investment and operation decisions in the optimization.",
+      "type": "INTEGER"
+    }
+  },
+  "asset_commission": {
+    "asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "commission_year": {
+      "description": "Year of commissioning.",
+      "type": "INTEGER"
+    },
+    "conversion_efficiency": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 1.0,
+      "description": "Conversion asset efficiency.",
+      "type": "DOUBLE",
+      "unit_of_measure": "ratio"
+    },
+    "fixed_cost": {
+      "default": 0.0,
+      "description": "Fixed annual cost for the asset capacity.",
+      "type": "DOUBLE",
+      "unit_of_measure": "CUR/MW/year"
+    },
+    "fixed_cost_storage_energy": {
+      "default": 0.0,
+      "description": "Fixed annual cost for the asset storage capacity",
+      "type": "DOUBLE",
+      "unit_of_measure": "CUR/MWh/year"
+    },
+    "investment_cost": {
+      "default": 0.0,
+      "description": "Investment cost for the asset capacity.",
+      "type": "DOUBLE",
+      "unit_of_measure": "CUR/MW"
+    },
+    "investment_cost_storage_energy": {
+      "default": 0.0,
+      "description": "Investment cost for the asset energy storage capacity.",
+      "type": "DOUBLE",
+      "unit_of_measure": "CUR/MWh"
+    },
+    "investment_limit": {
+      "default": null,
+      "description": "Maximum capacity for the asset investment. If the initial value is null, empty, or missing, it will be no limit.",
+      "type": "DOUBLE",
+      "unit_of_measure": "MWh"
+    },
+    "investment_limit_storage_energy": {
+      "default": null,
+      "description": "Maximum capacity for the asset storage investment. If the initial value is null, empty, or missing, it will be no limit.",
+      "type": "DOUBLE",
+      "unit_of_measure": "MWh"
+    },
+    "storage_charging_efficiency": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 1.0,
+      "description": "Storage asset charging efficiency as a multiplier for the sum of all inputs of the asset.",
+      "type": "DOUBLE",
+      "unit_of_measure": "ratio"
+    },
+    "storage_discharging_efficiency": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 1.0,
+      "description": "Storage asset discharging efficiency as a multiplier for the sum of all outputs of the asset.",
+      "type": "DOUBLE",
+      "unit_of_measure": "ratio"
+    },
+    "storage_loss_from_stored_energy": {
+      "default": 0,
+      "description": "[e.g. 0.01 means 1% every hour] Loss of stored energy over time.",
+      "type": "DOUBLE",
+      "unit_of_measure": "p.u./h"
+    }
+  },
+  "asset_milestone": {
+    "asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "initial_storage_level": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": null,
+      "description": "The initial storage level at the beginning of the optimization. The final storage level needs to be above this initial value. If the initial value is null, empty, or missing, it will be optimized using a cycling constraint that links the last period to the initial period.",
+      "type": "DOUBLE",
+      "unit_of_measure": "MWh"
+    },
+    "investable": {
+      "default": false,
+      "description": "Whether there is an investment variable created for the asset or not.",
+      "type": "BOOLEAN"
+    },
+    "max_energy_timeframe_partition": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": null,
+      "description": "The maximum amount of energy across the timeframe (e.g., a year) that the asset must produce. If the initial value is null, empty, or missing, it will be no limit.",
+      "type": "DOUBLE",
+      "unit_of_measure": "MWh"
+    },
+    "milestone_year": {
+      "description": "Year of investment and operation decisions in the optimization.",
+      "type": "INTEGER"
+    },
+    "min_energy_timeframe_partition": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": null,
+      "description": "The minimum amount of energy across the timeframe (e.g., a year) that the asset must produce. If the initial value is null, empty, or missing, it will be no limit.",
+      "type": "DOUBLE",
+      "unit_of_measure": "MWh"
+    },
+    "peak_demand": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 0,
+      "description": "Value that multiplies the demand profile time series.",
+      "type": "DOUBLE",
+      "unit_of_measure": "MW"
+    },
+    "storage_inflows": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 0,
+      "description": "Value that multiplies the inflow profile time series.",
+      "type": "DOUBLE",
+      "unit_of_measure": "MWh/year"
+    },
+    "units_on_cost": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": null,
+      "description": "Cost of keeping unit online for one hour or the objective function coefficient on `units_on` variable. e.g., no_load cost or idling cost",
+      "type": "DOUBLE",
+      "unit_of_measure": "CUR/p.u./h"
+    }
+  },
+  "assets_profiles": {
+    "asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "commission_year": {
+      "description": "Year of commissioning",
+      "type": "INTEGER"
+    },
+    "profile_name": {
+      "description": "Name of profile, used to determine data inside the DuckDB table",
+      "type": "VARCHAR"
+    },
+    "profile_type": {
+      "constraints": {
+        "oneOf": [
+          "availability",
+          "demand",
+          "inflows",
+          "max_storage_level",
+          "min_storage_level"
+        ]
+      },
+      "description": "Type of profile, used to determine DuckDB table with source profile",
+      "type": "VARCHAR"
+    }
+  },
+  "assets_rep_periods_partitions": {
+    "asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "partition": {
+      "default": "1",
+      "description": "Partition or temporal resolution in the representative periods. For example, for a `uniform` specification `1` is hourly, `2` is every two hours.",
+      "type": "VARCHAR"
+    },
+    "rep_period": {
+      "description": "Number of the representative period",
+      "type": "INTEGER",
+      "unit_of_measure": "number"
+    },
+    "specification": {
+      "constraints": {
+        "oneOf": [
+          "uniform",
+          "explicit",
+          "math"
+        ]
+      },
+      "default": "uniform",
+      "description": "Partition (or temporal resolution) specification in the representative periods.",
+      "type": "VARCHAR"
+    }
+  },
+  "assets_timeframe_partitions": {
+    "asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "partition": {
+      "default": "1",
+      "description": "Partition or temporal resolution in the timeframe. For example, if a period is equivalent to a day then for a `uniform` specification `1` is per day, `2` is every two days.",
+      "type": "VARCHAR"
+    },
+    "specification": {
+      "constraints": {
+        "oneOf": [
+          "uniform",
+          "explicit",
+          "math"
+        ]
+      },
+      "default": "uniform",
+      "description": "Partition (or temporal resolution) specification in the timeframe.",
+      "type": "VARCHAR"
+    }
+  },
+  "assets_timeframe_profiles": {
+    "asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "profile_name": {
+      "description": "Name of profile, used to determine data inside the DuckDB table",
+      "type": "VARCHAR"
+    },
+    "profile_type": {
+      "constraints": {
+        "oneOf": [
+          "max_storage_level",
+          "min_storage_level",
+          "max_energy",
+          "min_energy"
+        ]
+      },
+      "description": "Type of profile, used to determine DuckDB table with source profile",
+      "type": "VARCHAR"
+    },
+    "scenario": {
+      "default": 1,
+      "description": "Stochastic scenario number.",
+      "type": "INTEGER",
+      "unit_of_measure": "number"
+    }
+  },
+  "flow": {
+    "capacity": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 0,
+      "description": "Capacity for one unit of the transport flow (is therefore multiplied by number of existing plus invested number of transport assets).",
+      "type": "DOUBLE",
+      "unit_of_measure": "MW"
+    },
+    "carrier": {
+      "default": null,
+      "description": "Energy carrier",
+      "type": "VARCHAR"
+    },
+    "discount_rate": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 0,
+      "description": " e.g. 0.05 is 5 %. discount rate for the annuity calculation.",
+      "type": "DOUBLE",
+      "unit_of_measure": "ratio"
+    },
+    "economic_lifetime": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 1,
+      "description": "Economic lifetime of the transport asset for annuity calculation.",
+      "type": "INTEGER",
+      "unit_of_measure": "years"
+    },
+    "from_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "investment_integer": {
+      "default": false,
+      "description": "Whether investment decisions are using integer variables.",
+      "type": "BOOLEAN"
+    },
+    "is_transport": {
+      "default": false,
+      "description": "Whether a transport flow or not. Transport assets can have flows in both directions and can be invested in.",
+      "type": "BOOLEAN"
+    },
+    "technical_lifetime": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 1,
+      "description": "Technical lifetime of the transport asset to determine for how long the capacity is considered from the commission year.",
+      "type": "INTEGER",
+      "unit_of_measure": "years"
+    },
+    "to_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    }
+  },
+  "flow_both": {
+    "commission_year": {
+      "description": "Year of commissioning",
+      "type": "INTEGER"
+    },
+    "decommissionable": {
+      "default": false,
+      "description": "Whether the transport asset can be decomission or not.",
+      "type": "BOOLEAN"
+    },
+    "from_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "initial_export_units": {
+      "default": 0,
+      "description": "Number of existing units in `from_asset` -> `to_asset` direction",
+      "type": "DOUBLE",
+      "unit_of_measure": "number"
+    },
+    "initial_import_units": {
+      "default": 0,
+      "description": "Number of existing units in `to_asset` -> `from_asset` direction",
+      "type": "DOUBLE",
+      "unit_of_measure": "number"
+    },
+    "milestone_year": {
+      "description": "Year of investment and operation decisions in the optimization.",
+      "type": "INTEGER"
+    },
+    "to_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    }
+  },
+  "flow_commission": {
+    "capacity_coefficient": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 1,
+      "description": "Coefficient for the flow in the maximum capacity constraints.",
+      "type": "DOUBLE",
+      "unit_of_measure": "p.u."
+    },
+    "commission_year": {
+      "description": "Year of commissioning",
+      "type": "INTEGER"
+    },
+    "conversion_coefficient": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 1,
+      "description": "Multiplier between the flow and the conversion balance constraint of the asset.",
+      "type": "DOUBLE",
+      "unit_of_measure": "p.u."
+    },
+    "fixed_cost": {
+      "default": 0.0,
+      "description": "Fixed annual cost for the transport asset capacity.",
+      "type": "DOUBLE",
+      "unit_of_measure": "CUR/MW/year"
+    },
+    "from_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "investment_cost": {
+      "default": 0.0,
+      "description": "Investment cost for the transport asset capacity.",
+      "type": "DOUBLE",
+      "unit_of_measure": "CUR/MW"
+    },
+    "investment_limit": {
+      "default": null,
+      "description": "Maximum capacity for the transport asset investment. If the initial value is null, empty, or missing, it will be no limit.",
+      "type": "DOUBLE",
+      "unit_of_measure": "MWh"
+    },
+    "producer_efficiency": {
+      "constraints": {
+        "minimum": 0
+      },
+      "default": 1.0,
+      "description": "Producer asset efficiency.",
+      "type": "DOUBLE",
+      "unit_of_measure": "ratio"
+    },
+    "to_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    }
+  },
+  "flow_milestone": {
+    "commodity_price": {
+      "default": 0,
+      "description": "Price of the commodity.",
+      "type": "DOUBLE",
+      "unit_of_measure": "CUR/MWh or other units depending on the commodity"
+    },
+    "dc_opf": {
+      "default": false,
+      "description": "Whether a flow uses direct current optimal power flow (dc-opf) constraints or not. This method only applies to transport flows.",
+      "type": "BOOLEAN"
+    },
+    "from_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "investable": {
+      "default": false,
+      "description": "Whether there is an investment variable created for the asset or not.",
+      "type": "BOOLEAN"
+    },
+    "milestone_year": {
+      "description": "Year of investment and operation decisions in the optimization.",
+      "type": "INTEGER"
+    },
+    "operational_cost": {
+      "default": 0,
+      "description": "Variable cost for the flow.",
+      "type": "DOUBLE",
+      "unit_of_measure": "CUR/MWh"
+    },
+    "reactance": {
+      "default": 0.3,
+      "description": "Reactance for the transport flow.",
+      "type": "DOUBLE",
+      "unit_of_measure": "p.u."
+    },
+    "to_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    }
+  },
+  "flows_profiles": {
+    "from_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "profile_name": {
+      "description": "Name of profile, used to determine data inside the DuckDB table",
+      "type": "VARCHAR"
+    },
+    "profile_type": {
+      "constraints": {
+        "oneOf": [
+          "availability",
+          "commodity_price"
+        ]
+      },
+      "description": "Type of profile, used to determine DuckDB table with source profile",
+      "type": "VARCHAR"
+    },
+    "to_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    }
+  },
+  "flows_relationships": {
+    "constant": {
+      "default": 0,
+      "description": "Constant `C` in `flow_1 {==;>=;<=} C + A x flow_2` relationship constraint",
+      "type": "DOUBLE",
+      "unit_of_measure": "MWh"
+    },
+    "flow_1_from_asset": {
+      "description": "Name of the `from_asset` of the `flow_1` in `flow_1 {==;>=;<=} C + A x flow_2` relationship constraint. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "flow_1_to_asset": {
+      "description": "Name of the `to_asset` of the `flow_1` in `flow_1 {==;>=;<=} C + A x flow_2` relationship constraint. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "flow_2_from_asset": {
+      "description": "Name of the `from_asset` of the `flow_2` in `flow_1 {==;>=;<=} C + A x flow_2` relationship constraint. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "flow_2_to_asset": {
+      "description": "Name of the `to_asset` of the `flow_2` in `flow_1 {==;>=;<=} C + A x flow_2` relationship constraint. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "ratio": {
+      "default": 1,
+      "description": "Ratio `A` in `flow_1 {==;>=;<=} C + A x flow_2` relationship constraint",
+      "type": "DOUBLE",
+      "unit_of_measure": "p.u."
+    },
+    "sense": {
+      "constraints": {
+        "oneOf": [
+          "==",
+          ">=",
+          "<="
+        ]
+      },
+      "default": "==",
+      "description": "Is the sense in `flow_1 {==;>=;<=} C + A x flow_2` relationship constraint, equal to, greater than or less than.",
+      "type": "VARCHAR"
+    }
+  },
+  "flows_rep_periods_partitions": {
+    "from_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    },
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "partition": {
+      "default": "1",
+      "description": "Partition or temporal resolution in the representative periods. For example, for a `uniform` specification `1` is hourly, `2` is every two hours.",
+      "type": "VARCHAR"
+    },
+    "rep_period": {
+      "description": "Number of the representative period",
+      "type": "INTEGER",
+      "unit_of_measure": "number"
+    },
+    "specification": {
+      "constraints": {
+        "oneOf": [
+          "uniform",
+          "explicit",
+          "math"
+        ]
+      },
+      "default": "uniform",
+      "description": "Partition (or temporal resolution) specification in the representative periods.",
+      "type": "VARCHAR"
+    },
+    "to_asset": {
+      "description": "Name of the asset. Same as the one in the `asset` table.",
+      "type": "VARCHAR"
+    }
+  },
+  "group_asset": {
+    "constraint_sense": {
+      "constraints": {
+        "oneOf": [
+          "==",
+          ">=",
+          "<="
+        ]
+      },
+      "description": "Whether the expression in the group constraint is equal to, greater than, or less than, the right-hand-side.",
+      "type": "VARCHAR"
+    },
+    "invest_method": {
+      "description": "true -> activate group constraints; false -> no group investment constraints",
+      "type": "BOOLEAN"
+    },
+    "milestone_year": {
+      "description": "Year of investment and operation decisions in the optimization.",
+      "type": "INTEGER"
+    },
+    "name": {
+      "description": "Name of the Group",
+      "type": "VARCHAR"
+    },
+    "rhs": {
+      "description": "Right-hand-side of the group constraint.",
+      "type": "DOUBLE"
+    }
+  },
+  "group_asset_membership": {
+    "asset": {
+      "description": "One of the assets in this group.",
+      "type": "VARCHAR"
+    },
+    "coefficient": {
+      "default": 1.0,
+      "description": "Coefficient of the investment variable corresponding to this asset.",
+      "type": "DOUBLE"
+    },
+    "group_name": {
+      "description": "Investment group to which the asset belongs to.",
+      "type": "VARCHAR"
+    },
+    "milestone_year": {
+      "description": "Year of investment and operation decisions in the optimization.",
+      "type": "INTEGER"
+    }
+  },
+  "model_parameters": {
+    "discount_rate": {
+      "default": 0.0,
+      "description": "The model discount rate.",
+      "type": "DOUBLE"
+    },
+    "discount_year": {
+      "description": "The model discount year. If provided, it must be less than or equal to the minimum of all milestone years (from the table `rep_periods_data`). If not provided, the minimum is used.",
+      "type": "INTEGER"
+    },
+    "power_system_base": {
+      "default": 100.0,
+      "description": "The power system base in MVA.",
+      "type": "DOUBLE"
+    },
+    "risk_aversion_confidence_level_alpha": {
+      "constraints": {
+        "maximum": 0.9999,
+        "minimum": 0
+      },
+      "default": 0.95,
+      "description": "The confidence level that the system costs will not exceed the Value at Risk (VaR).",
+      "type": "DOUBLE"
+    },
+    "risk_aversion_weight_lambda": {
+      "constraints": {
+        "maximum": 1,
+        "minimum": 0
+      },
+      "default": 0.0,
+      "description": "The risk aversion weight (between 0 and 1) for the mean-variance objective function. If 0, the objective function is the expected cost; if 1, the objective function is the variance of the cost; if between 0 and 1, the objective function is a weighted sum of the expected cost and the variance of the cost.",
+      "type": "DOUBLE"
+    }
+  },
+  "profiles_rep_periods": {
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "profile_name": {
+      "description": "Profile name.",
+      "type": "VARCHAR"
+    },
+    "rep_period": {
+      "description": "Representative period number.",
+      "type": "INTEGER"
+    },
+    "timestep": {
+      "description": "Timestep number.",
+      "type": "INTEGER"
+    },
+    "value": {
+      "description": "Value of the profile.",
+      "type": "DOUBLE",
+      "unit_of_measure": "p.u."
+    }
+  },
+  "profiles_timeframe": {
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "period": {
+      "description": "Period.",
+      "type": "INTEGER"
+    },
+    "profile_name": {
+      "description": "Profile name.",
+      "type": "VARCHAR"
+    },
+    "value": {
+      "description": "value of the profile.",
+      "type": "DOUBLE",
+      "unit_of_measure": "p.u."
+    }
+  },
+  "rep_periods_data": {
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "num_timesteps": {
+      "default": 8760,
+      "description": "Number of timesteps",
+      "type": "INTEGER"
+    },
+    "rep_period": {
+      "description": "Representative period number.",
+      "type": "INTEGER",
+      "unit_of_measure": "number"
+    },
+    "resolution": {
+      "default": 1,
+      "description": "Duration of each timestep",
+      "type": "DOUBLE",
+      "unit_of_measure": "hours"
+    }
+  },
+  "rep_periods_mapping": {
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "period": {
+      "description": "Period number.",
+      "type": "INTEGER"
+    },
+    "rep_period": {
+      "description": "Representative period number.",
+      "type": "INTEGER"
+    },
+    "scenario": {
+      "default": 1,
+      "description": "Stochastic scenario number.",
+      "type": "INTEGER",
+      "unit_of_measure": "number"
+    },
+    "weight": {
+      "default": 1.0,
+      "description": "Hours",
+      "type": "DOUBLE"
+    }
+  },
+  "stochastic_scenario": {
+    "description": {
+      "default": "",
+      "description": "Description of the stochastic scenario. e.g., 'Weather year 1982'.",
+      "type": "VARCHAR"
+    },
+    "probability": {
+      "constraints": {
+        "maximum": 1,
+        "minimum": 0
+      },
+      "default": 1.0,
+      "description": "Probability of the stochastic scenario.",
+      "type": "DOUBLE",
+      "unit_of_measure": "ratio"
+    },
+    "scenario": {
+      "description": "Stochastic scenario number.",
+      "type": "INTEGER",
+      "unit_of_measure": "number"
+    }
+  },
+  "timeframe_data": {
+    "milestone_year": {
+      "description": "Milestone year.",
+      "type": "INTEGER"
+    },
+    "num_timesteps": {
+      "default": 8760,
+      "description": "Number of timesteps of the representative period.",
+      "type": "INTEGER"
+    },
+    "period": {
+      "description": "Period.",
+      "type": "INTEGER"
+    }
+  }
+}

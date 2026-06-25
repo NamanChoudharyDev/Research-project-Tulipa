@@ -1,0 +1,4 @@
+from_asset,to_asset,milestone_year,commission_year,decommissionable,initial_export_units,initial_import_units
+Asgard_E_demand,Midgard_E_demand,2030,2030,false,0.0,0.0
+Asgard_E_demand,Valhalla_E_balance,2030,2030,false,1.0,1.0
+Midgard_E_demand,Valhalla_E_balance,2030,2030,false,0.0,0.0

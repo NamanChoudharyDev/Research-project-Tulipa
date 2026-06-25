@@ -1,0 +1,6 @@
+from_asset,to_asset,milestone_year,rep_period,specification,partition
+H2,ccgt,2030,1,uniform,6
+wind,balance,2030,1,math,1x2+1x4
+wind,phs,2030,1,uniform,3
+phs,balance,2030,1,math,1x4+1x2
+balance,demand,2030,1,uniform,3

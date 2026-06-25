@@ -1,0 +1,19 @@
+EnergyProblem:
+  - Model created!
+    - Number of variables: 364
+    - Number of constraints for variable bounds: 369
+    - Number of structural constraints: 432
+  - Model solved!
+    - Termination status: OPTIMAL
+    - Objective value: 269238.4382415648
+    - Objective breakdown:
+      - assets_fixed_cost_aggregated_vintage_method: 0.0
+      - assets_fixed_cost_compact_vintage_method: 0.0
+      - assets_investment_cost: 177000.0
+      - flows_fixed_cost: 0.0
+      - flows_investment_cost: 0.0
+      - flows_operational_cost: 92238.43824156489
+      - storage_assets_energy_fixed_cost: 0.0
+      - storage_assets_energy_investment_cost: 0.0
+      - units_on_operational_cost: 0.0
+      - vintage_flows_operational_cost: 0.0

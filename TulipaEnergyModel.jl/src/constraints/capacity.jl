@@ -1,0 +1,617 @@
+"""
+    add_capacity_constraints!(connection, model, expressions, constraints, profiles)
+
+Adds the capacity constraints for all asset types to the model
+"""
+function add_capacity_constraints!(connection, model, expressions, constraints, profiles)
+    ## unpack from expressions
+    expr_avail_compact_method =
+        expressions[:available_asset_units_compact_vintage_method].expressions[:assets]
+    expr_avail_aggregated_vintage_method =
+        expressions[:available_asset_units_aggregated_vintage_method].expressions[:assets]
+
+    ## Expressions used by capacity constraints
+    # - Create capacity limit for outgoing flows
+    # - Compact investment method
+    let table_name = :capacity_outgoing_compact_profiles_vintage_method,
+        cons = constraints[table_name]
+
+        indices = _append_capacity_data_to_indices_compact_method(connection, table_name)
+        attach_expression!(
+            cons,
+            :profile_times_capacity,
+            [
+                begin
+                    @expression(
+                        model,
+                        row.capacity * sum(
+                            begin
+                                availability_agg = _profile_aggregate(
+                                    profiles.rep_period,
+                                    (avail_profile_name, row.milestone_year, row.rep_period),
+                                    row.time_block_start:row.time_block_end,
+                                    Statistics.mean,
+                                    1.0,
+                                )
+                                availability_agg * expr_avail_compact_method[avail_id]
+                            end for (avail_profile_name, avail_id) in
+                            zip(row.avail_profile_name, row.avail_indices)
+                        )
+                    )
+                end for row in indices
+            ],
+        )
+    end
+
+    # - Simple investment method
+    let table_name = :capacity_outgoing_aggregated_vintage_method, cons = constraints[table_name]
+        indices = _append_capacity_data_to_indices_aggregated_vintage_method(connection, table_name)
+
+        attach_expression!(
+            cons,
+            :profile_times_capacity,
+            [
+                @expression(
+                    model,
+                    row.capacity *
+                    _profile_aggregate(
+                        profiles.rep_period,
+                        (row.profile_name, row.milestone_year, row.rep_period),
+                        row.time_block_start:row.time_block_end,
+                        Statistics.mean,
+                        1.0,
+                    ) *
+                    expr_avail_aggregated_vintage_method[row.avail_id]
+                ) for row in indices
+            ],
+        )
+    end
+
+    # - Create capacity limit for outgoing flows with binary is_charging for storage assets
+    let table_name =
+            :capacity_outgoing_aggregated_vintage_method_non_investable_storage_with_binary,
+        cons = constraints[table_name]
+
+        indices = _append_capacity_data_to_indices_aggregated_vintage_method(connection, table_name)
+
+        attach_expression!(
+            cons,
+            :profile_times_capacity,
+            [
+                begin
+                    availability_agg = _profile_aggregate(
+                        profiles.rep_period,
+                        (row.profile_name, row.milestone_year, row.rep_period),
+                        row.time_block_start:row.time_block_end,
+                        Statistics.mean,
+                        1.0,
+                    )
+                    @expression(
+                        model,
+                        availability_agg *
+                        row.capacity *
+                        row.avail_initial_units *
+                        (1 - is_charging)
+                    )
+                end for (row, is_charging) in zip(indices, cons.expressions[:is_charging])
+            ],
+        )
+    end
+
+    let table_name = :capacity_outgoing_aggregated_vintage_method_investable_storage_with_binary,
+        cons = constraints[table_name]
+
+        indices = _append_capacity_data_to_indices_aggregated_vintage_method(connection, table_name)
+
+        attach_expression!(
+            cons,
+            :profile_times_capacity_with_investment_variable,
+            [
+                begin
+                    availability_agg = _profile_aggregate(
+                        profiles.rep_period,
+                        (row.profile_name, row.milestone_year, row.rep_period),
+                        row.time_block_start:row.time_block_end,
+                        Statistics.mean,
+                        1.0,
+                    )
+                    @expression(
+                        model,
+                        availability_agg *
+                        row.capacity *
+                        (
+                            row.avail_initial_units * (1 - is_charging) +
+                            expr_avail_aggregated_vintage_method[row.avail_id]
+                        )
+                    )
+                end for (row, is_charging) in zip(indices, cons.expressions[:is_charging])
+            ],
+        )
+
+        attach_expression!(
+            cons,
+            :profile_times_capacity_with_investment_limit,
+            [
+                begin
+                    availability_agg = _profile_aggregate(
+                        profiles.rep_period,
+                        (row.profile_name, row.milestone_year, row.rep_period),
+                        row.time_block_start:row.time_block_end,
+                        Statistics.mean,
+                        1.0,
+                    )
+                    @expression(
+                        model,
+                        availability_agg *
+                        (row.capacity * row.avail_initial_units + row.investment_limit) *
+                        (1 - is_charging)
+                    )
+                end for (row, is_charging) in zip(indices, cons.expressions[:is_charging])
+            ],
+        )
+    end
+
+    # - Create capacity limit for incoming flows
+    let table_name = :capacity_incoming_aggregated_vintage_method, cons = constraints[table_name]
+        indices = _append_capacity_data_to_indices_aggregated_vintage_method(connection, table_name)
+        attach_expression!(
+            cons,
+            :profile_times_capacity,
+            [
+                begin
+                    availability_agg = _profile_aggregate(
+                        profiles.rep_period,
+                        (row.profile_name, row.milestone_year, row.rep_period),
+                        row.time_block_start:row.time_block_end,
+                        Statistics.mean,
+                        1.0,
+                    )
+                    @expression(
+                        model,
+                        availability_agg *
+                        row.capacity *
+                        expr_avail_aggregated_vintage_method[row.avail_id]
+                    )
+                end for row in indices
+            ],
+        )
+    end
+
+    # - Create capacity limit for incoming flows with binary is_charging for storage assets
+    let table_name =
+            :capacity_incoming_aggregated_vintage_method_non_investable_storage_with_binary,
+        cons = constraints[table_name]
+
+        indices = _append_capacity_data_to_indices_aggregated_vintage_method(connection, table_name)
+
+        attach_expression!(
+            cons,
+            :profile_times_capacity,
+            [
+                begin
+                    availability_agg = _profile_aggregate(
+                        profiles.rep_period,
+                        (row.profile_name, row.milestone_year, row.rep_period),
+                        row.time_block_start:row.time_block_end,
+                        Statistics.mean,
+                        1.0,
+                    )
+                    @expression(
+                        model,
+                        availability_agg * row.capacity * row.avail_initial_units * is_charging
+                    )
+                end for (row, is_charging) in zip(indices, cons.expressions[:is_charging])
+            ],
+        )
+    end
+
+    let table_name = :capacity_incoming_aggregated_vintage_method_investable_storage_with_binary,
+        cons = constraints[table_name]
+
+        indices = _append_capacity_data_to_indices_aggregated_vintage_method(connection, table_name)
+
+        attach_expression!(
+            cons,
+            :profile_times_capacity_with_investment_variable,
+            [
+                begin
+                    availability_agg = _profile_aggregate(
+                        profiles.rep_period,
+                        (row.profile_name, row.milestone_year, row.rep_period),
+                        row.time_block_start:row.time_block_end,
+                        Statistics.mean,
+                        1.0,
+                    )
+                    @expression(
+                        model,
+                        availability_agg *
+                        row.capacity *
+                        (
+                            row.avail_initial_units * is_charging +
+                            expr_avail_aggregated_vintage_method[row.avail_id]
+                        )
+                    )
+                end for (row, is_charging) in zip(indices, cons.expressions[:is_charging])
+            ],
+        )
+
+        attach_expression!(
+            cons,
+            :profile_times_capacity_with_investment_limit,
+            [
+                begin
+                    availability_agg = _profile_aggregate(
+                        profiles.rep_period,
+                        (row.profile_name, row.milestone_year, row.rep_period),
+                        row.time_block_start:row.time_block_end,
+                        Statistics.mean,
+                        1.0,
+                    )
+                    @expression(
+                        model,
+                        availability_agg *
+                        (row.capacity * row.avail_initial_units + row.investment_limit) *
+                        is_charging
+                    )
+                end for (row, is_charging) in zip(indices, cons.expressions[:is_charging])
+            ],
+        )
+    end
+
+    ## Capacity limit constraints (using the highest resolution) for the basic
+    # version and the version using binary to avoid charging and discharging at
+    # the same time
+
+    for suffix in (
+        "_compact_profiles_vintage_method",
+        "_aggregated_vintage_method",
+        "_aggregated_vintage_method_non_investable_storage_with_binary",
+    )
+        cons_name = Symbol("max_output_flows_limit$suffix")
+        table_name = Symbol("capacity_outgoing$suffix")
+
+        # - Maximum output flows limit
+        attach_constraint!(
+            model,
+            constraints[table_name],
+            cons_name,
+            [
+                @constraint(
+                    model,
+                    outgoing_flow ≤ profile_times_capacity,
+                    base_name = "$cons_name[$(row.asset),$(row.milestone_year),$(row.rep_period),$(row.time_block_start):$(row.time_block_end)]"
+                ) for (row, outgoing_flow, profile_times_capacity) in zip(
+                    constraints[table_name].indices,
+                    constraints[table_name].expressions[:outgoing],
+                    constraints[table_name].expressions[:profile_times_capacity],
+                )
+            ],
+        )
+    end
+
+    for suffix in ("_with_investment_variable", "_with_investment_limit")
+        cons_name = Symbol(
+            "max_output_flows_limit_aggregated_vintage_method_investable_storage_with_binary_and$suffix",
+        )
+        table_name = :capacity_outgoing_aggregated_vintage_method_investable_storage_with_binary
+
+        # - Maximum output flows limit
+        attach_constraint!(
+            model,
+            constraints[table_name],
+            cons_name,
+            [
+                @constraint(
+                    model,
+                    outgoing_flow ≤ profile_times_capacity,
+                    base_name = "$cons_name[$(row.asset),$(row.milestone_year),$(row.rep_period),$(row.time_block_start):$(row.time_block_end)]"
+                ) for (row, outgoing_flow, profile_times_capacity) in zip(
+                    constraints[table_name].indices,
+                    constraints[table_name].expressions[:outgoing],
+                    constraints[table_name].expressions[Symbol("profile_times_capacity$suffix")],
+                )
+            ],
+        )
+    end
+
+    for suffix in (
+        "_aggregated_vintage_method",
+        "_aggregated_vintage_method_non_investable_storage_with_binary",
+    )
+        cons_name = Symbol("max_input_flows_limit$suffix")
+        table_name = Symbol("capacity_incoming$suffix")
+
+        # - Maximum input flows limit
+        attach_constraint!(
+            model,
+            constraints[table_name],
+            cons_name,
+            [
+                @constraint(
+                    model,
+                    incoming_flow ≤ profile_times_capacity,
+                    base_name = "$cons_name[$(row.asset),$(row.milestone_year),$(row.rep_period),$(row.time_block_start):$(row.time_block_end)]"
+                ) for (row, incoming_flow, profile_times_capacity) in zip(
+                    constraints[table_name].indices,
+                    constraints[table_name].expressions[:incoming],
+                    constraints[table_name].expressions[:profile_times_capacity],
+                )
+            ],
+        )
+    end
+
+    for suffix in ("_with_investment_variable", "_with_investment_limit")
+        cons_name = Symbol(
+            "max_input_flows_limit_aggregated_vintage_method_investable_storage_with_binary_and_$suffix",
+        )
+        table_name = :capacity_incoming_aggregated_vintage_method_investable_storage_with_binary
+
+        # - Maximum input flows limit
+        attach_constraint!(
+            model,
+            constraints[table_name],
+            cons_name,
+            [
+                @constraint(
+                    model,
+                    incoming_flow ≤ profile_times_capacity,
+                    base_name = "$cons_name[$(row.asset),$(row.milestone_year),$(row.rep_period),$(row.time_block_start):$(row.time_block_end)]"
+                ) for (row, incoming_flow, profile_times_capacity) in zip(
+                    constraints[table_name].indices,
+                    constraints[table_name].expressions[:incoming],
+                    constraints[table_name].expressions[Symbol("profile_times_capacity$suffix")],
+                )
+            ],
+        )
+    end
+
+    ### Add the capacity constraints of semi-compact investment method for outgoing flows
+    add_capacity_outgoing_compact_efficiencies_vintage_method_constraints!(
+        connection,
+        model,
+        expr_avail_compact_method,
+        constraints,
+        profiles,
+    )
+
+    ## Create lower bound for available capacity compact method
+    # - Only apply to decommissionable assets using the compact investment method
+    # - The simple method has the capacity constraint to guarantee the lower bound
+    add_limit_decommission_compact_method_constraints!(
+        connection,
+        model,
+        expr_avail_compact_method,
+        constraints,
+    )
+
+    return
+end
+
+"""
+    add_capacity_outgoing_compact_efficiencies_vintage_method_constraints!(connection, model, expressions, constraints, profiles)
+
+Adds the capacity constraints for the semi-compact investment method.
+"""
+function add_capacity_outgoing_compact_efficiencies_vintage_method_constraints!(
+    connection,
+    model,
+    expressions,
+    constraints,
+    profiles,
+)
+
+    # - Semi-compact investment method
+    let table_name = :capacity_outgoing_compact_efficiencies_vintage_method,
+        cons = constraints[table_name]
+
+        indices = _append_capacity_data_to_indices_compact_efficiencies_vintage_method(
+            connection,
+            table_name,
+        )
+
+        attach_expression!(
+            cons,
+            :profile_times_capacity,
+            [
+                @expression(
+                    model,
+                    row.capacity *
+                    _profile_aggregate(
+                        profiles.rep_period,
+                        (row.profile_name, row.milestone_year, row.rep_period),
+                        row.time_block_start:row.time_block_end,
+                        Statistics.mean,
+                        1.0,
+                    ) *
+                    expressions[row.avail_id]
+                ) for row in indices
+            ],
+        )
+    end
+
+    let suffix = "_compact_efficiencies_vintage_method"
+        cons_name = Symbol("max_output_flows_limit$suffix")
+        table_name = Symbol("capacity_outgoing$suffix")
+
+        # - Maximum output flows limit
+        attach_constraint!(
+            model,
+            constraints[table_name],
+            cons_name,
+            [
+                @constraint(
+                    model,
+                    outgoing_flow ≤ profile_times_capacity,
+                    base_name = "$cons_name[$(row.asset),$(row.milestone_year),$(row.commission_year),$(row.rep_period),$(row.time_block_start):$(row.time_block_end)]"
+                ) for (row, outgoing_flow, profile_times_capacity) in zip(
+                    constraints[table_name].indices,
+                    constraints[table_name].expressions[:outgoing],
+                    constraints[table_name].expressions[:profile_times_capacity],
+                )
+            ],
+        )
+    end
+end
+
+"""
+    add_limit_decommission_compact_method_constraints!(connection, model, expressions, constraints)
+
+Adds the lower bound for the available capacity of decommissionable assets for the compact investment method.
+This is used to give a upper bound for the decommission variable.
+"""
+function add_limit_decommission_compact_method_constraints!(
+    connection,
+    model,
+    expressions,
+    constraints,
+)
+    let table_name = :limit_decommission_compact_vintage_method, cons = constraints[table_name]
+        indices = _append_expression_available_capacity_id_to_indices_compact_method(
+            connection,
+            table_name,
+        )
+        attach_constraint!(
+            model,
+            cons,
+            table_name,
+            [
+                @constraint(
+                    model,
+                    expressions[row.avail_id] ≥ 0,
+                    base_name = "$table_name[$(row.asset),$(row.milestone_year),$(row.commission_year)]"
+                ) for row in indices
+            ],
+        )
+    end
+end
+
+# The below two functions are very similar
+# - The compact method selects the compact investment method
+# - and aggregates the available capacity indices
+function _append_capacity_data_to_indices_compact_method(connection, table_name)
+    return DuckDB.query(
+        connection,
+        "SELECT
+            ANY_VALUE(cons.id) AS id,
+            ANY_VALUE(cons.asset) AS asset,
+            ANY_VALUE(cons.milestone_year) AS milestone_year,
+            ANY_VALUE(cons.rep_period) AS rep_period,
+            ANY_VALUE(cons.time_block_start) AS time_block_start,
+            ANY_VALUE(cons.time_block_end) AS time_block_end,
+            ARRAY_AGG(expr_avail.id) AS avail_indices,
+            ARRAY_AGG(avail_profile.profile_name) AS avail_profile_name,
+            ANY_VALUE(asset.capacity) AS capacity
+        FROM cons_$table_name AS cons
+        LEFT JOIN asset
+            ON cons.asset = asset.asset
+        LEFT JOIN expr_available_asset_units_compact_vintage_method AS expr_avail
+            ON cons.asset = expr_avail.asset
+            AND cons.milestone_year = expr_avail.milestone_year
+        LEFT OUTER JOIN assets_profiles AS avail_profile
+            ON cons.asset = avail_profile.asset
+            AND expr_avail.commission_year = avail_profile.commission_year
+            AND avail_profile.profile_type = 'availability'
+        WHERE asset.vintage_method = 'compact_profiles'
+        GROUP BY cons.id
+        ORDER BY cons.id
+        ",
+    )
+end
+
+# - The simple method selects the simple or the none investment method
+# - and do not aggregate the available capacity indices, because there will be only 1.
+# - It is a choice the the none method takes the simple formulation (can also take the compact formulation)
+function _append_capacity_data_to_indices_aggregated_vintage_method(connection, table_name)
+    return DuckDB.query(
+        connection,
+        "SELECT
+            cons.id AS id,
+            cons.asset AS asset,
+            cons.milestone_year AS milestone_year,
+            cons.rep_period AS rep_period,
+            cons.time_block_start AS time_block_start,
+            cons.time_block_end AS time_block_end,
+            expr_avail.id AS avail_id,
+            expr_avail.initial_units AS avail_initial_units,
+            asset.capacity AS capacity,
+            asset_commission.investment_limit AS investment_limit,
+            avail_profile.profile_name AS profile_name,
+        FROM cons_$table_name AS cons
+        LEFT JOIN asset
+            ON cons.asset = asset.asset
+        LEFT JOIN asset_commission
+            ON cons.asset = asset_commission.asset
+            AND cons.milestone_year = asset_commission.commission_year
+        LEFT JOIN expr_available_asset_units_aggregated_vintage_method AS expr_avail
+            ON cons.asset = expr_avail.asset
+            -- For simple method: milestone_year = commission_year
+            -- so no need to join on commission_year
+            AND cons.milestone_year = expr_avail.milestone_year
+        -- OUTER JOIN is used to allow for assets without availability profiles
+        -- Null will be left and replaced by 1.0 in the profile aggregate
+        LEFT OUTER JOIN assets_profiles AS avail_profile
+            ON cons.asset = avail_profile.asset
+            AND expr_avail.commission_year = avail_profile.commission_year
+            AND avail_profile.profile_type = 'availability'
+        WHERE asset.vintage_method = 'aggregated'
+        ORDER BY cons.id
+        ",
+    )
+end
+
+# The goal of the below function is to append data to the indices of the semi-compact method
+# Important to note is the correct avail_id for (asset, milestone_year, commission_year)
+# and the correct profile name for (asset, milestone_year, commission_year).
+function _append_capacity_data_to_indices_compact_efficiencies_vintage_method(
+    connection,
+    table_name,
+)
+    return DuckDB.query(
+        connection,
+        "SELECT
+            cons.id AS id,
+            cons.asset AS asset,
+            cons.milestone_year AS milestone_year,
+            cons.commission_year AS commission_year,
+            cons.rep_period AS rep_period,
+            cons.time_block_start AS time_block_start,
+            cons.time_block_end AS time_block_end,
+            expr_avail.id AS avail_id,
+            asset.capacity AS capacity,
+            avail_profile.profile_name AS profile_name,
+        FROM cons_$table_name AS cons
+        LEFT JOIN asset
+            ON cons.asset = asset.asset
+        LEFT JOIN expr_available_asset_units_compact_vintage_method AS expr_avail
+            ON cons.asset = expr_avail.asset
+            AND cons.milestone_year = expr_avail.milestone_year
+            AND cons.commission_year = expr_avail.commission_year
+       LEFT JOIN assets_profiles AS avail_profile
+            ON cons.asset = avail_profile.asset
+            AND expr_avail.commission_year = avail_profile.commission_year
+            AND avail_profile.profile_type = 'availability'
+        WHERE asset.vintage_method = 'compact_efficiencies' -- this condition is not needed, but makes it more explicit
+        ORDER BY cons.id
+        ",
+    )
+end
+
+# - Append the expression available capacity id to the indices of the con
+function _append_expression_available_capacity_id_to_indices_compact_method(connection, table_name)
+    return DuckDB.query(
+        connection,
+        "SELECT
+            cons.id AS id,
+            expr_avail_compact_method.id AS avail_id,
+            cons.asset AS asset,
+            cons.milestone_year AS milestone_year,
+            cons.commission_year AS commission_year,
+        FROM cons_$table_name AS cons
+        LEFT JOIN expr_available_asset_units_compact_vintage_method AS expr_avail_compact_method
+            ON cons.asset = expr_avail_compact_method.asset
+            AND cons.milestone_year = expr_avail_compact_method.milestone_year
+            AND cons.commission_year = expr_avail_compact_method.commission_year
+        ORDER BY cons.id
+        ",
+    )
+end

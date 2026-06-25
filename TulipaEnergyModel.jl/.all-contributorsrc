@@ -1,0 +1,181 @@
+{
+  "contributorsSortAlphabetically": true,
+  "files": [
+    "README.md",
+    "docs/src/index.md"
+  ],
+  "projectName": "TulipaEnergyModel.jl",
+  "projectOwner": "TulipaEnergy",
+  "commitType": "docs",
+  "commitConvention": "angular",
+  "contributorsPerLine": 7,
+  "contributors": [
+    {
+      "login": "abelsiqueira",
+      "name": "Abel Soares Siqueira",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1068752?v=4",
+      "profile": "https://abelsiqueira.com",
+      "contributions": [
+        "code",
+        "review"
+      ]
+    },
+    {
+      "login": "datejada",
+      "name": "Diego Alejandro Tejada Arango",
+      "avatar_url": "https://avatars.githubusercontent.com/u/12887482?v=4",
+      "profile": "https://github.com/datejada",
+      "contributions": [
+        "code",
+        "review",
+        "ideas",
+        "research"
+      ]
+    },
+    {
+      "login": "suvayu",
+      "name": "Suvayu Ali",
+      "avatar_url": "https://avatars.githubusercontent.com/u/229540?v=4",
+      "profile": "https://github.com/suvayu",
+      "contributions": [
+        "code",
+        "review",
+        "ideas"
+      ]
+    },
+    {
+      "login": "gnawin",
+      "name": "Ni Wang",
+      "avatar_url": "https://avatars.githubusercontent.com/u/125902905?v=4",
+      "profile": "https://github.com/gnawin",
+      "contributions": [
+        "code",
+        "review",
+        "ideas",
+        "research"
+      ]
+    },
+    {
+      "login": "clizbe",
+      "name": "Lauren Clisby",
+      "avatar_url": "https://avatars.githubusercontent.com/u/11889283?v=4",
+      "profile": "https://github.com/clizbe",
+      "contributions": [
+        "code",
+        "review",
+        "ideas",
+        "projectManagement"
+      ]
+    },
+    {
+      "login": "g-moralesespana",
+      "name": "Germán Morales",
+      "avatar_url": "https://avatars.githubusercontent.com/u/42405171?v=4",
+      "profile": "https://github.com/g-moralesespana",
+      "contributions": [
+        "research",
+        "ideas",
+        "fundingFinding",
+        "projectManagement"
+      ]
+    },
+    {
+      "login": "jkiviluo",
+      "name": "Juha Kiviluoma",
+      "avatar_url": "https://avatars.githubusercontent.com/u/40472544?v=4",
+      "profile": "https://github.com/jkiviluo",
+      "contributions": [
+        "ideas",
+        "research"
+      ]
+    },
+    {
+      "login": "mdeweerdt",
+      "name": "Mathijs de Weerdt",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1650785?v=4",
+      "profile": "https://github.com/mdeweerdt",
+      "contributions": [
+        "fundingFinding",
+        "projectManagement"
+      ]
+    },
+    {
+      "login": "greg-neustroev",
+      "name": "Greg Neustroev",
+      "avatar_url": "https://avatars.githubusercontent.com/u/32451432?v=4",
+      "profile": "https://github.com/greg-neustroev",
+      "contributions": [
+        "ideas",
+        "research",
+        "code"
+      ]
+    },
+    {
+      "login": "gzclarence",
+      "name": "Zhi",
+      "avatar_url": "https://avatars.githubusercontent.com/u/70965161?v=4",
+      "profile": "https://github.com/gzclarence",
+      "contributions": [
+        "ideas",
+        "research"
+      ]
+    },
+    {
+      "login": "lsoucasse",
+      "name": "Laurent Soucasse",
+      "avatar_url": "https://avatars.githubusercontent.com/u/135331272?v=4",
+      "profile": "https://github.com/lsoucasse",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "sjvrijn",
+      "name": "Sander van Rijn",
+      "avatar_url": "https://avatars.githubusercontent.com/u/8833517?v=4",
+      "profile": "http://www.svrijn.nl",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "maaikeelgersma",
+      "name": "maaikeelgersma",
+      "avatar_url": "https://avatars.githubusercontent.com/u/55436655?v=4",
+      "profile": "https://github.com/maaikeelgersma",
+      "contributions": [
+        "ideas",
+        "research"
+      ]
+    },
+    {
+      "login": "IsaiMaganTNO",
+      "name": "IsaiMaganTNO",
+      "avatar_url": "https://avatars.githubusercontent.com/u/163312300?v=4",
+      "profile": "https://github.com/IsaiMaganTNO",
+      "contributions": [
+        "review"
+      ]
+    },
+    {
+      "login": "nope82",
+      "name": "nope82",
+      "avatar_url": "https://avatars.githubusercontent.com/u/80949386?v=4",
+      "profile": "https://github.com/nope82",
+      "contributions": [
+        "review"
+      ]
+    },
+    {
+      "login": "florinelaseur",
+      "name": "Florine LASEUR",
+      "avatar_url": "https://avatars.githubusercontent.com/u/75248762?v=4",
+      "profile": "https://github.com/florinelaseur",
+      "contributions": [
+        "code",
+        "research",
+        "doc"
+      ]
+    }
+  ]
+}
